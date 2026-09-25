@@ -101,3 +101,31 @@ export function keyIdleStatus(row: { lastOrderAt: Date | null; verifiedAt: Date 
   const since = (row.lastOrderAt ?? row.verifiedAt).getTime(), idleDays = Math.floor((now - since) / 86_400_000), deleteAt = new Date(since + KEY_IDLE_DELETE_DAYS * 86_400_000);
   return { idleDays, deleteAt, state: idleDays >= KEY_IDLE_DELETE_DAYS ? "expired" : idleDays >= KEY_IDLE_DELETE_DAYS - KEY_IDLE_WARN_DAYS ? "warn" : "ok" };
 }
+
+/** KAYITLI ANAHTARIN DURUMU (G31 · Tur 75 · S-2, S-6, U-3). Panelin "Binance API anahtarı" bölümü YALNIZ bunu okur (GET /api/exchange-key, cls session). Seçilen alanlar izin bayrakları, ad ve
+ *  zamanlardır: zarf, parmak izi, ham Binance yanıtı ve şifreleme sürümü SEÇİLMEZ ve çözülmez (kapı: gate:exchange-key `status-leaks-key`). Motorun kullandığı satır prismaKeySource ile AYNI kuraldır
+ *  (iptal edilmemiş EN YENİ satır). Kabul akışı eski satırı iptal ETMEZ (yalnız create) ⇒ ondan önceki geçerli satırlar sayılır ve "kullanılmıyor" diye yazılır. Cümleler burada kurulur; ekran kendi hesabını yazmaz. */
+export type KeyStatus = { ok: true; present: false; lines: string[] } | { ok: true; present: true; lines: string[]; label: string; spot: boolean; futures: boolean; reading: boolean; ipRestrict: boolean;
+  verifiedAt: string; lastOrderAt: string | null; idle: { idleDays: number; state: "ok" | "warn" | "expired"; deleteAt: string }; olderRows: number } | { ok: false; lines: string[] };
+const utc = (d: Date) => `${d.toISOString().replace("T", " ").slice(0, 19)} UTC`;
+const acik = (b: boolean) => (b ? "AÇIK" : "KAPALI");
+export async function readKeyStatus(client?: PrismaClient, now = Date.now()): Promise<KeyStatus> {
+  let row: { label: string; ipRestrict: boolean; enableReading: boolean; enableSpotAndMarginTrading: boolean; enableFutures: boolean; enableWithdrawals: boolean; permitsUniversalTransfer: boolean; verifiedAt: Date; lastOrderAt: Date | null } | null, live: number;
+  try {
+    const db = client ?? getDb();
+    row = await db.exchangeKey.findFirst({ where: { revokedAt: null }, orderBy: { id: "desc" }, select: { label: true, ipRestrict: true, enableReading: true, enableSpotAndMarginTrading: true, enableFutures: true, enableWithdrawals: true, permitsUniversalTransfer: true, verifiedAt: true, lastOrderAt: true } });
+    live = await db.exchangeKey.count({ where: { revokedAt: null } });
+  } catch { return { ok: false, lines: ["Kayıtlı Binance anahtarının durumu bu açılışta OKUNAMADI — anahtar var mı yok mu BİLİNMİYOR. Okunamayan durum \"anahtar yok\" sayılmadı; motorun kendisi anahtarı ayrıca okur ve okuyamazsa borsaya imzalı çağrı yapmaz."] }; }
+  if (!row) return { ok: true, present: false, lines: ["Kayıtlı Binance anahtarı YOK — motor borsaya imzalı çağrı yapamaz ve emir gönderemez. Aşağıdaki formdan bir anahtar ekleyebilirsin."] };
+  const idle = keyIdleStatus(row, now), since = row.lastOrderAt ?? row.verifiedAt, olderRows = live - 1;
+  const lines = [
+    `Kayıtlı Binance anahtarı VAR: "${row.label}". Son değişiklik: ${utc(row.verifiedAt)} — anahtar o an Binance'ten izinleri okunarak doğrulandı ve şifrelenerek kaydedildi. Anahtarın kendisi ve özel anahtar bu ekranda hiçbir zaman gösterilmez.`,
+    `İzinler (kayıt anında Binance'in bildirdiği): okuma ${acik(row.enableReading)} · spot işlem ${acik(row.enableSpotAndMarginTrading)} · futures ${acik(row.enableFutures)} · çekim ${acik(row.enableWithdrawals)} · evrensel transfer ${acik(row.permitsUniversalTransfer)} · IP kısıtı ${row.ipRestrict ? "VAR" : "YOK"}.${row.enableSpotAndMarginTrading ? "" : " Spot işlem izni KAPALI olduğu için motor bu anahtarla spot emir GÖNDEREMEZ."}`,
+    row.ipRestrict
+      ? `Son emir: ${row.lastOrderAt ? utc(row.lastOrderAt) : "bu anahtarla henüz gerçek emir gönderilmedi"}. Binance'in 30 gün emirsiz kalan anahtarı silme kuralı IP kısıtı OLMAYAN anahtarlar için ölçüldü; IP kısıtlı anahtar için bu kural ölçülmedi.`
+      : `Son emir: ${row.lastOrderAt ? utc(row.lastOrderAt) : "bu anahtarla henüz gerçek emir gönderilmedi"}. IP kısıtı olmayan anahtarı Binance 30 gün emirsiz kalınca SİLİYOR (ölçüldü). Sayaç ${utc(since)} tarihinden işliyor: ${idle.idleDays} gün geçti, anahtar en erken ${utc(idle.deleteAt)} tarihinde silinebilir.${idle.state === "expired" ? " SÜRE DOLDU: anahtar Binance'te silinmiş olabilir; yeni bir anahtar eklemen gerekebilir." : idle.state === "warn" ? " SİLİNMEYE YAKLAŞIYOR: süre dolmadan yeni bir anahtar eklemen ya da motorun bir emir göndermesi gerekir." : ""} Yazılım anahtarı ayakta tutmak için anlamsız emir göndermez.`,
+  ];
+  if (olderRows > 0) lines.push(`Veritabanında bundan önce kaydedilmiş ${olderRows} eski anahtar kaydı daha duruyor; motor YALNIZ en yenisini kullanır. Bu ekran eski anahtarları Binance'te kapatmaz — kullanmadığın anahtarı Binance'te silmeyi unutma.`);
+  return { ok: true, present: true, lines, label: row.label, spot: row.enableSpotAndMarginTrading, futures: row.enableFutures, reading: row.enableReading, ipRestrict: row.ipRestrict,
+    verifiedAt: row.verifiedAt.toISOString(), lastOrderAt: row.lastOrderAt?.toISOString() ?? null, idle: { idleDays: idle.idleDays, state: idle.state, deleteAt: idle.deleteAt.toISOString() }, olderRows };
+}

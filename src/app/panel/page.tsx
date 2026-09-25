@@ -346,6 +346,73 @@ function GirisFormu({ girdi, not }: { girdi: () => void; not: string | null }) {
   );
 }
 
+/** BINANCE ANAHTARI BÖLÜMÜ (G31 · Tur 75 · güvenlik yüzeyi ANAHTAR/PARA; P-1, S-1, S-2, S-6, S-8, U-3). YALNIZ mevcut `POST /api/exchange-key` ucuna gönderir — uç davranışı DEĞİŞMEDİ
+ *  (oturum + eylem başına kod; Binance'ten izin okuma; çekim ya da evrensel transfer açıksa ret; şifreleyerek kayıt). Durum satırları ucun GET'inin kurduğu cümlelerdir (`lines`); ekran hesap yapmaz.
+ *  Özel anahtar alanı `type="password"` + autocomplete kapalı; hiçbir alanın `name`i yok; form yerel gönderimi `preventDefault` ile keser. Anahtar ve özel anahtar hiçbir depoya, konsola, URL'ye
+ *  ya da sonuç cümlesine YAZILMAZ; yanıt gelince (başarı ya da ret) bütün alanlar boşaltılır. Ret cümleleri sebep koduna göre sabittir, ucun `detail`i ekrana basılmaz. */
+type KeyView = { ok: boolean; present?: boolean; lines?: string[] };
+/** Tek satırlı parola alanı yapıştırılan PEM'in satır sonlarını SİLER (tarayıcı kuralı). Gövde, başlık etiketi KORUNARAK yeniden satırlara bölünür: içerik değişmez, yalnız biçim.
+ *  Başlık yoksa değer olduğu gibi gider ve uç onu biçim denetiminde reddeder (uydurma başlık eklenmez). */
+const pemYap = (v: string): string => { const m = /-----BEGIN ([A-Z0-9 ]+)-----([\s\S]*?)-----END \1-----/.exec(v.trim()); if (!m) return v.trim();
+  const govde = m[2].replace(/\s+/g, ""); return `-----BEGIN ${m[1]}-----\n${(govde.match(/.{1,64}/g) ?? []).join("\n")}\n-----END ${m[1]}-----\n`; };
+function AnahtarYuzeyi({ durum, yenile }: { durum: KeyView | null; yenile: () => Promise<void> }) {
+  const [ad, setAd] = useState("");
+  const [apiAnahtari, setApiAnahtari] = useState("");
+  const [ozel, setOzel] = useState("");
+  const [kod, setKod] = useState("");
+  const [gonderiliyor, setGonderiliyor] = useState(false);
+  const [sonuc, setSonuc] = useState<{ ton: Level; metin: string } | null>(null);
+  const hazir = ad.trim() !== "" && apiAnahtari.trim() !== "" && ozel.trim() !== "" && /^\d{6}$/.test(kod) && !gonderiliyor;
+  const gonder = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault(); if (!hazir) return;
+    setGonderiliyor(true); setSonuc(null); let r: Response | null = null;
+    try { r = await fetch("/api/exchange-key", { method: "POST", headers: { "content-type": "application/json", "x-totp-code": kod }, body: JSON.stringify({ label: ad.trim(), keyType: "ed25519", apiKey: apiAnahtari.trim(), privateKeyPem: pemYap(ozel) }), cache: "no-store" }); } catch { r = null; }
+    setAd(""); setApiAnahtari(""); setOzel(""); setKod(""); setGonderiliyor(false);
+    const b = r ? ((await r.json().catch(() => ({}))) as { ok?: boolean; reason?: string; restrictions?: { enableSpotAndMarginTrading?: boolean; enableFutures?: boolean } }) : {};
+    const kalan = "Anahtar hiçbir yere kaydedilmedi.";
+    setSonuc(r === null ? { ton: "WARN", metin: `Sunucuya ulaşılamadı; anahtarın kaydedilip kaydedilmediği BİLİNMİYOR. Yukarıdaki durum satırını yeniden okut.` }
+      : r.ok && b.ok ? { ton: "OK", metin: `Anahtar Binance'te doğrulandı ve şifrelenerek kaydedildi. Binance'in bildirdiği izinler: spot işlem ${b.restrictions?.enableSpotAndMarginTrading ? "AÇIK" : "KAPALI"}, futures ${b.restrictions?.enableFutures ? "AÇIK" : "KAPALI"}, çekim ve evrensel transfer KAPALI. Motor bundan sonra bu anahtarı kullanır. Eski bir anahtarın varsa onu Binance'te silmeyi unutma.` }
+      : r.status === 401 ? { ton: "WARN", metin: `Oturumun düşmüş; ${kalan} Sayfayı yenileyip yeniden giriş yap.` }
+      : r.status === 403 ? { ton: "WARN", metin: `Tek kullanımlık kod doğrulanamadı; ${kalan} Anahtar paranın yönetimine erişim verdiği için kod olmadan eklenemez.` }
+      : r.status === 423 ? { ton: "ALARM", metin: `Çok fazla yanlış deneme yapıldı; hassas işlemler geçici olarak kilitli. ${kalan}` }
+      : b.reason === "P1_WITHDRAWALS" ? { ton: "ALARM", metin: `Anahtar REDDEDİLDİ: Binance'te bu anahtarın çekim izni açık. ${kalan} Binance'te çekim iznini kapat ya da çekim izni olmayan yeni bir anahtar oluşturup onu ekle.` }
+      : b.reason === "P1_UNIVERSAL_TRANSFER" ? { ton: "ALARM", metin: `Anahtar REDDEDİLDİ: Binance'te bu anahtarın evrensel transfer izni açık. ${kalan} Binance'te evrensel transfer iznini kapat ya da bu izin kapalı yeni bir anahtar ekle.` }
+      : b.reason === "READ_DISABLED" ? { ton: "WARN", metin: `Anahtar REDDEDİLDİ: Binance'te bu anahtarın okuma izni kapalı; izinler okunamadığı için anahtar denetlenemez. ${kalan} Okuma iznini açıp yeniden ekle.` }
+      : b.reason === "PRIVATE_KEY_NOT_ED25519" || b.reason === "KEY_TYPE_NOT_ED25519" ? { ton: "WARN", metin: `Anahtar REDDEDİLDİ: özel anahtar Ed25519 PEM biçiminde değil. ${kalan} Ed25519 özel anahtarını BEGIN ve END satırları dahil tamamıyla yapıştır.` }
+      : b.reason === "BAD_INPUT" ? { ton: "WARN", metin: `Alanlardan biri boş ya da çok uzun (ad en çok 64 karakter). ${kalan}` }
+      : r.status === 503 || r.status === 502 ? { ton: "WARN", metin: `Binance'e ulaşılamadı ya da anahtarın izinleri okunamadı; ${kalan} Biraz sonra yeniden dene.` }
+      : { ton: "WARN", metin: `Sunucunun yanıtı anlaşılamadı; anahtarın kaydedilip kaydedilmediği BİLİNMİYOR. Yukarıdaki durum satırını yeniden okut.` });
+    await yenile();
+  };
+  const alan = { display: "block", width: "100%", boxSizing: "border-box", padding: ".7rem .8rem", fontSize: "1rem", background: "#141419", color: "#e8e8ea", border: "1px solid #33333c", borderRadius: 6 } as const;
+  return (
+    <section id="anahtar-bolumu" style={box(!durum?.ok ? "WARN" : durum.present ? "INFO" : "WARN")} aria-label="Binance API anahtarı">
+      <div id="anahtar-durum">{(durum?.lines ?? ["Kayıtlı Binance anahtarının durumu bu açılışta OKUNAMADI — anahtar var mı yok mu BİLİNMİYOR."]).map((l, i) => <p key={i} style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{l}</p>)}</div>
+      <details id="anahtar-detay" style={{ marginTop: ".6rem" }}>
+        <summary style={{ cursor: "pointer" }}>{durum?.present ? "Anahtarı değiştir (tek kullanımlık kod ister)" : "Anahtar ekle (tek kullanımlık kod ister)"}</summary>
+        <div style={{ margin: ".5rem 0", lineHeight: 1.55, color: "#9a9aa2" }}>
+          <p style={{ margin: ".3rem 0" }}>Binance'te anahtarı şöyle oluştur: önce Binance'in anahtar üretme aracıyla kendi bilgisayarında bir Ed25519 anahtar çifti üret (özel anahtar sende kalır). Sonra Binance'te Profil → API Management → Create API → Self-generated seç, ortak anahtarı (public key) yapıştır, bir ad ver ve iki adımlı doğrulamayı tamamla. Binance sana API key'i gösterir.</p>
+          <p style={{ margin: ".3rem 0" }}>İzinler: okuma AÇIK olmalı (kapalıysa anahtar reddedilir) · motorun emir gönderebilmesi için spot işlem AÇIK · futures yalnız futures kullanacaksan · çekim ve evrensel transfer KAPALI olmalı — açıksa bu ekran anahtarı reddeder ve hiçbir yere kaydetmez.</p>
+          <p style={{ margin: ".3rem 0" }}>IP kısıtı: bu yazılımın sunucudan çıkış adresi ölçülmedi, bu yüzden bir IP kısıtı önerilmiyor. IP kısıtı olmayan anahtarın 30 gün emirsiz kalınca silinme sayacı yukarıdaki durum satırında izlenir.</p>
+          <p style={{ margin: ".3rem 0" }}>Yeni anahtar kaydedilince motor en yenisini kullanır; eski kayıt kullanılmaz ama Binance'te kendiliğinden kapanmaz.</p>
+        </div>
+        <form method="post" onSubmit={(e) => void gonder(e)} aria-label="Binance anahtarı ekle" style={{ maxWidth: 520 }}>
+          <label htmlFor="anahtar-ad" style={{ display: "block", margin: ".5rem 0 .3rem", color: "#9a9aa2" }}>Ad (yalnız senin için; en çok 64 karakter)</label>
+          <input id="anahtar-ad" value={ad} onChange={(e) => setAd(e.target.value)} maxLength={64} autoComplete="off" spellCheck={false} disabled={gonderiliyor} style={alan} />
+          <label htmlFor="anahtar-api" style={{ display: "block", margin: ".7rem 0 .3rem", color: "#9a9aa2" }}>API key (Binance'in gösterdiği)</label>
+          <input id="anahtar-api" value={apiAnahtari} onChange={(e) => setApiAnahtari(e.target.value)} maxLength={256} autoComplete="off" spellCheck={false} disabled={gonderiliyor} style={alan} />
+          <label htmlFor="anahtar-ozel" style={{ display: "block", margin: ".7rem 0 .3rem", color: "#9a9aa2" }}>Özel anahtar (Ed25519, PEM — tamamını yapıştır; ekranda gizli kalır)</label>
+          <input id="anahtar-ozel" type="password" value={ozel} onChange={(e) => setOzel(e.target.value)} autoComplete="off" spellCheck={false} disabled={gonderiliyor} style={alan} />
+          <label htmlFor="anahtar-kod" style={{ display: "block", margin: ".7rem 0 .3rem", color: "#9a9aa2" }}>Tek kullanımlık kod (6 hane)</label>
+          <input id="anahtar-kod" value={kod} onChange={(e) => setKod(e.target.value)} inputMode="numeric" maxLength={6} autoComplete="off" disabled={gonderiliyor} style={{ ...alan, width: "8rem" }} />
+          <button id="anahtar-gonder" type="submit" disabled={!hazir} style={{ marginTop: ".8rem", padding: ".45rem .9rem", borderRadius: 6, border: eylemKenari(hazir), background: hazir ? "#12354f" : "#1a1a20", color: "#e8e8ea", cursor: hazir ? "pointer" : "not-allowed" }}>{gonderiliyor ? "Binance'te doğrulanıyor…" : "Anahtarı doğrula ve kaydet"}</button>
+        </form>
+        <div id="anahtar-sonuc" role="status" aria-live="polite">{sonuc !== null && <p style={{ ...box(sonuc.ton), lineHeight: 1.55 }}>{sonuc.metin}</p>}</div>
+      </details>
+    </section>
+  );
+}
+
 export default function Panel() {
   const [view, setView] = useState<PanelView | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -374,6 +441,8 @@ export default function Panel() {
   const [risk, setRisk] = useState<RiskView | null>(null);
   // GIRIS SALTERI (Tur 64): panel acilisinda AYARDAN okunur; okunamazsa "bilinmiyor" yazilir, deger ICAT EDILMEZ (O-2).
   const [giris, setGiris] = useState<EntryView | null>(null);
+  // G31 (Tur 75): kayıtlı Binance anahtarının durumu — ucun kurduğu cümleler; okunamazsa "bilinmiyor" yazılır, "yok" sayılmaz.
+  const [anahtar, setAnahtar] = useState<KeyView | null>(null);
   const [riskSecili, setRiskSecili] = useState<Record<string, boolean>>({});
   const [riskDeger, setRiskDeger] = useState<Record<string, string>>({});
   const [riskTotp, setRiskTotp] = useState("");
@@ -389,12 +458,13 @@ export default function Panel() {
 
   const load = useCallback(async () => {
     try {
-      const [p, s, k, g] = await Promise.all([fetch("/api/panel", { cache: "no-store" }), fetch("/api/brain/settings", { cache: "no-store" }), fetch("/api/risk/settings", { cache: "no-store" }), fetch("/api/entry/settings", { cache: "no-store" })]);
+      const [p, s, k, g, x] = await Promise.all([fetch("/api/panel", { cache: "no-store" }), fetch("/api/brain/settings", { cache: "no-store" }), fetch("/api/risk/settings", { cache: "no-store" }), fetch("/api/entry/settings", { cache: "no-store" }), fetch("/api/exchange-key", { cache: "no-store" })]);
       if (p.status === 401 || s.status === 401 || k.status === 401) { setState("oturumsuz"); return; }
       setView(p.ok ? ((await p.json()) as PanelView) : null);
       setSettings((await s.json()) as Settings);
       setRisk((await k.json().catch(() => ({ ok: false }))) as RiskView);
       setGiris((await g.json().catch(() => ({ ok: false }))) as EntryView);
+      setAnahtar((await x.json().catch(() => ({ ok: false }))) as KeyView);
       setState(p.ok ? "hazır" : "ulaşılamadı");
     } catch { setState("ulaşılamadı"); }
   }, []);
@@ -417,7 +487,7 @@ export default function Panel() {
   // Çıkış: mevcut POST /api/auth/logout (çerezi düşürür). Başarısızsa ekran oturumlu kalır ve bunu söyler — çerez tarayıcıda kalmış olabilir.
   const cikis = async () => { let ok = false; try { ok = (await fetch("/api/auth/logout", { method: "POST", cache: "no-store" })).ok; } catch { ok = false; }
     if (!ok) { setCikisHata("Çıkış yapılamadı: sunucuya ulaşılamadı ya da istek reddedildi, oturum hâlâ açık olabilir. Yeniden dene."); return; }
-    setCikisHata(null); setView(null); setSettings(null); setRisk(null); setGiris(null); setCikisNot("Çıkış yapıldı; bu tarayıcıdaki oturum kapandı."); setState("oturumsuz"); };
+    setCikisHata(null); setView(null); setSettings(null); setRisk(null); setGiris(null); setAnahtar(null); setCikisNot("Çıkış yapıldı; bu tarayıcıdaki oturum kapandı."); setState("oturumsuz"); };
   const kilidiAc = async () => { if (await unlock()) { setKilitNot(null); setKilit("ACIK"); await load(); } else setKilitNot(LOCK_TEXT.FAILED); };
   const tanit = async () => setKilitNot(await enroll() ? "Bu cihaz kilide tanıtıldı. Şimdi \"Kilidi aç\" ile doğrula." : LOCK_TEXT.ENROLL_FAILED);
 
@@ -568,6 +638,8 @@ export default function Panel() {
         <h2 style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>Pozisyonlar</h2>
         <CardBlock c={v.positions.card} />
         {v.positions.rows.map((p) => <CardBlock key={p.id} c={{ level: p.level, title: p.title, lines: p.lines }} head="pozisyon" />)}
+        <h2 style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>Binance API anahtarı</h2>
+        <AnahtarYuzeyi durum={anahtar} yenile={load} />
         <h2 style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>Aylık maliyet tavanı</h2>
         <section style={box(settings?.ok && settings.costCap ? (settings.costCap.brainMonthlyUsd === null ? "WARN" : "INFO") : "WARN")} aria-label="Aylık maliyet tavanı">
           {!settings?.ok || !settings.costCap ? <p style={{ lineHeight: 1.55 }}>Aylık maliyet tavanı bu açılışta okunamadı, bu yüzden buraya rakam yazılmadı. Okunamayan tavan &quot;boş&quot; SAYILMAZ; ayar okunamadığında karar motoru zaten çağrılmaz.</p> : <>

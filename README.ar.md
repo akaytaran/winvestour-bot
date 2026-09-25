@@ -11,7 +11,7 @@
 
 `winvestour-bot` محرك تداول صغير تشغّله **على حساباتك الخاصة**: يقرأ سوق Binance الفوري بمفتاح API **الخاص بك**، ويقرر وفق قواعد يكتبها نموذج Claude مرة يومياً، ويستطيع إرسال أوامر حقيقية على حسابك. كل تثبيت نسخة مستقلة — تبقى قاعدة البيانات ومفتاح Binance ومفتاح Claude API في استضافتك، ولا شيء في هذه النسخة يتصل بالمشرف. هو لشخص واحد يريد تشغيل محرك كهذا لنفسه، ويقرأ الكود أولاً، ويبدأ بمبلغ صغير.
 
-**المحتويات:** [ما تحتاجه](#ما-تحتاجه) · [التثبيت](#التثبيت) · [الاستخدام الأول](#الاستخدام-الأول) · [تكلفة التشغيل الشهرية](#تكلفة-التشغيل-الشهرية) · [الأسئلة الشائعة / حل المشكلات](#الأسئلة-الشائعة--حل-المشكلات) · [المساهمة](CONTRIBUTING.md)
+**المحتويات:** [ما تحتاجه](#ما-تحتاجه) · [التثبيت بمساعدة مساعد ذكاء اصطناعي](#التثبيت-بمساعدة-مساعد-ذكاء-اصطناعي) · [التثبيت](#التثبيت) · [الاستخدام الأول](#الاستخدام-الأول) · [تكلفة التشغيل الشهرية](#تكلفة-التشغيل-الشهرية) · [الأسئلة الشائعة / حل المشكلات](#الأسئلة-الشائعة--حل-المشكلات) · [المساهمة](CONTRIBUTING.md)
 
 <!-- readme:warning -->
 ### ⚠️ اقرأ قبل التثبيت
@@ -50,6 +50,72 @@
 
 مفتاح Binance API **ليس** متغير بيئة: يُقدَّم عبر التطبيق بعد التثبيت ويُخزَّن في قاعدة بياناتك مشفَّراً بمفتاحك الرئيسي (انظر "الاستخدام الأول").
 
+## التثبيت بمساعدة مساعد ذكاء اصطناعي
+
+انسخ الكتلة أدناه كما هي والصقها في مساعد ذكاء اصطناعي (Claude أو ChatGPT أو Cursor أو ما يشبهها). سيأخذك عبر الخطوات المرقّمة في قسم التثبيت واحدةً تلو الأخرى، ويطلب منك التحقق من كل نتيجة، ولن يطلب منك أبداً لصق كلمة مرور أو مفتاح أو قيمة من `.env` في المحادثة. الكتلة بالإنجليزية عمداً وهي نفسها في كل نسخة لغوية من هذه الصفحة.
+
+<div dir="ltr">
+
+```text
+You are helping me install winvestour-bot, a self-hosted crypto trading bot for Binance, from its GitHub README. Follow these rules exactly and go one step at a time.
+
+1. Warning first. This software can place real orders with real money on its own decision. No profit is promised and the risk of loss is entirely mine. Before anything else, tell me to read the whole warning at the top of the README ("Read before you install") and wait until I say I have read it.
+
+2. Vercel Pro. The app must run on a Vercel account on the Pro plan: it runs a scheduled job every minute, and on the free Hobby plan the deployment fails. Tell me this before step 1 and ask whether I have the Pro plan.
+
+3. Secrets. Never ask me to paste passwords, API keys, TOTP secrets or .env values into this chat; tell me which command generates them on my computer and where to paste them.
+
+4. Steps. Take me through the README's Installation steps below, in this order, with exactly these commands. Do not add, skip, reorder or change any command. Step 14 is optional and not part of the setup.
+  1. Open the accounts you will need (about 30 minutes in total)
+     Check: you can sign in to all four services, and your Binance API key's permissions do not include withdrawals.
+  2. Get the code onto your computer
+     Check: the folder contains `package.json` and `.env.example`.
+  3. Install the dependencies from the copy's lock file
+     Command: `npm ci`
+     Check: the command ends without an error and a `node_modules` folder appears.
+  4. Generate the owner password, the TOTP secret and the session secret
+     Command: `npm run owner:credentials`
+     Check: the folder now contains sahip-kimlik.txt, vercel-env-sahip.json; the first holds your password and the TOTP setup key for your authenticator app, the second the three values for step 8. Nothing is printed on screen.
+  5. Generate the stop key (written to the same folder, not printed)
+     Command: `npm run stop:credential`
+     Check: durdurma-anahtari.txt, vercel-env-STOP_KEY_HASH.txt appear in the folder; the first holds the raw stop key you will type on the stop screen, the second its hash for step 8.
+  6. Generate the master key that encrypts your exchange keys (written to the same folder, not printed)
+     Command: `npm run key:encryption-master`
+     Check: sifreleme-ana-anahtari.txt, vercel-env-ENCRYPTION_MASTER_KEY.txt appear in the folder.
+  7. Create an empty PostgreSQL database
+     Check: two strings that start with `postgresql://`; the database has no tables yet.
+  8. Give every name in `.env.example` its value
+     Check: every name in `.env.example` has a value. If a required name is missing, the application stops at startup and names the missing variable.
+  9. Create the database tables
+     Command: `npx prisma migrate deploy`
+     Check: the output ends with `All migrations have been successfully applied.` A single migration named `0_baslangic` is applied; every settings table starts with one row; the risk settings are empty and switched off.
+  10. Check that the code builds on your computer (recommended before deploying)
+     Command: `npm run build`
+     Check: the command ends with the list of routes and no error; a `.next` folder appears.
+  11. Start it locally
+     Command: `npm start`
+     Check: the page shows `{"ok":true,"service":"engine",...}`, and `http://localhost:3000/panel` opens and says that the panel needs a session. The environment contract is validated as the server starts: if a required name is missing or malformed the server does not come up, and the error names the missing variable, never its value. Stop the server with Ctrl+C. Running the bot on your own computer is not supported yet: the engine is triggered by Vercel Cron. Local start is only for checking the installation.
+  12. Deploy on Vercel
+     Check: the deployment reaches Ready, and `https://<your-project>.vercel.app/api/health` returns `{"ok":true,...}`. On the Hobby plan the deployment fails instead, with a message that cron expressions running more often than once per day are not allowed.
+  13. Open the panel at `/panel` on your address, and the stop screen at `/durdur`
+     Check: both pages open (today the interface is in Turkish). The panel says it needs a session; the stop screen opens without a session and asks for the stop key. Continue with "First use".
+  14. OPTIONAL, NOT PART OF SETUP — MASTER KEY ROTATION
+     Command: `npm run rotate:encryption-key`
+     Check: each row is decrypted with the old key and re-wrapped with the new one in its own transaction, and its version is raised; the new envelope is checked against the new key BEFORE anything is written. Once no row is left on the old version, `ENCRYPTION_MASTER_KEY_PREVIOUS` can be deleted. No key value is ever printed.
+
+5. Checks. After each step, ask me to compare what I see with the Check line of that step. If it does not match, stop, do not improvise a fix, and send me to the README section "FAQ / troubleshooting" and the wiki page FAQ.
+
+6. First use. When the deployment is Ready, guide me through the README section "First use" in this order (the panel is in Turkish; the README gives each button's name):
+  1. Sign in (owner password, then a one-time code per sensitive action)
+  2. Add your Binance API key (withdrawals must be off)
+  3. Choose the tick interval (born empty)
+  4. Start and stop the engine
+  5. The entry switch (born ENABLED)
+  6. The cost cap and the Brain (born empty)
+```
+
+</div>
+
 <!-- readme:install -->
 ## التثبيت
 
@@ -85,7 +151,7 @@ npm run owner:credentials
 
 </div>
 
-النتيجة المتوقعة: يحتوي المجلد الآن على `sahip-kimlik.txt`, `vercel-env-g04.json`؛ الأول يحمل كلمة مرورك ومفتاح إعداد TOTP لتطبيق المصادقة، والثاني القيم الثلاث للخطوة 8. لا يُطبع شيء على الشاشة.
+النتيجة المتوقعة: يحتوي المجلد الآن على `sahip-kimlik.txt`, `vercel-env-sahip.json`؛ الأول يحمل كلمة مرورك ومفتاح إعداد TOTP لتطبيق المصادقة، والثاني القيم الثلاث للخطوة 8. لا يُطبع شيء على الشاشة.
 
 5. أنشئ مفتاح الإيقاف (يُكتب في المجلد نفسه ولا يُطبع):
 
@@ -153,7 +219,7 @@ npm start
 
 </div>
 
-النتيجة المتوقعة: تعرض الصفحة `{"ok":true,"service":"engine",...}`، ويُفتح `http://localhost:3000/panel` ويقول إن اللوحة تحتاج جلسة. يُتحقق من عقد البيئة عند بدء الخادم: إذا غاب اسم إلزامي أو كان مشوَّهاً فلا يعمل الخادم، ويذكر الخطأ المتغير الناقص دون قيمته أبداً. أوقف الخادم بـ Ctrl+C.
+النتيجة المتوقعة: تعرض الصفحة `{"ok":true,"service":"engine",...}`، ويُفتح `http://localhost:3000/panel` ويقول إن اللوحة تحتاج جلسة. يُتحقق من عقد البيئة عند بدء الخادم: إذا غاب اسم إلزامي أو كان مشوَّهاً فلا يعمل الخادم، ويذكر الخطأ المتغير الناقص دون قيمته أبداً. أوقف الخادم بـ Ctrl+C. تشغيل البوت على حاسوبك غير مدعوم بعد: يُشغَّل المحرك بواسطة Vercel Cron. التشغيل المحلي للتحقق من التثبيت فقط.
 
 12. انشر على Vercel: ادفع نسختك إلى حساب GitHub الخاص بك، ثم في Vercel اختر **Add New → Project → Import** لذلك المستودع، وأبقِ الإعداد المسبق للإطار **Next.js**، وأضف متغيرات البيئة من الخطوة 8، ثم اضغط **Deploy**. يشغّل Vercel السكربت `vercel-build`: يرفض أولاً أي ترحيلة قد تحذف بيانات، ثم ينشئ الجداول ويبني.
 
@@ -178,7 +244,9 @@ npm run rotate:encryption-key
 <!-- readme:first-use -->
 ## الاستخدام الأول
 
-الواجهة اليوم باللغة **التركية** فقط. تسجّل الدخول من صفحة اللوحة بكلمة مرور المالك؛ أما إضافة مفتاح Binance وتشغيل المحرك فما زالت تتم كلٌّ منها بطلب HTTP واحد (من وحدة تحكم المطوّر في متصفحك أو أي عميل HTTP) أثناء تسجيل دخولك. كل خطوة أدناه تصف بالضبط ما يفعله البرنامج اليوم؛ لا شيء هنا مخطَّط أو موعود.
+الواجهة اليوم باللغة **التركية** فقط. تسجّل الدخول من صفحة اللوحة بكلمة مرور المالك وتضيف مفتاح Binance من اللوحة؛ أما تشغيل المحرك فما زال يتم بطلب HTTP واحد (من وحدة تحكم المطوّر في متصفحك أو أي عميل HTTP) أثناء تسجيل دخولك. كل خطوة أدناه تصف بالضبط ما يفعله البرنامج اليوم؛ لا شيء هنا مخطَّط أو موعود.
+
+**الإعدادات:** كل إعداد في اللوحة — ما يفعله، وقيمته الافتراضية، وهل يحتاج الرمز لمرة واحدة، ومتى يسري — موصوف في صفحة الويكي [Settings guide](https://github.com/akaytaran/winvestour-bot/wiki/Settings-guide) (بالإنجليزية).
 
 ### 1. تسجيل الدخول (كلمة مرور المالك، ثم رمز لمرة واحدة لكل إجراء حساس)
 
@@ -186,7 +254,7 @@ npm run rotate:encryption-key
 
 ### 2. أضف مفتاح Binance API الخاص بك (يجب أن يكون السحب معطَّلاً)
 
-مع كوكي الجلسة وترويسة `x-totp-code`، أرسل `POST /api/exchange-key` مع `{"label": "<أي اسم>", "keyType": "ed25519", "apiKey": "<مفتاح API الخاص بك>", "privateKeyPem": "<مفتاحك الخاص Ed25519 بصيغة PEM>"}`. يتحقق التطبيق من صلاحيات المفتاح على Binance قبل تخزين أي شيء: يُرفض المفتاح الذي يُفعِّل السحب أو التحويل الشامل بـ **P1_WITHDRAWALS** / **P1_UNIVERSAL_TRANSFER** (HTTP 422)، والمفتاح غير Ed25519 بـ **KEY_TYPE_NOT_ED25519** (422). يُخزَّن المفتاح المقبول مشفَّراً بمفتاحك الرئيسي؛ ولا يُطبع أو يُعاد أي جزء منه أبداً.
+أنشئ المفتاح أولاً على Binance: ولّد على حاسوبك زوج مفاتيح **Ed25519** بأداة توليد المفاتيح من Binance (يبقى المفتاح الخاص عندك)، ثم افتح على Binance: الملف الشخصي ← API Management ← Create API ← **Self-generated**، والصق المفتاح العام، وأعطه اسماً وأكمل التحقق الثنائي؛ عندها يعرض لك Binance مفتاح API key. الأذونات: القراءة **مفعّلة** (المفتاح بلا قراءة يُرفض)، والتداول الفوري **مفعّل** ليتمكن المحرك من إرسال الأوامر، والعقود الآجلة فقط إن كنت تستخدمها، والسحب والتحويل الشامل **معطَّلان**. ثم افتح في اللوحة قسم **"Binance API anahtarı"** (مفتاح Binance API) ← **"Anahtar ekle (tek kullanımlık kod ister)"** (إضافة مفتاح، يطلب الرمز لمرة واحدة)، واملأ **Ad** (اسم تراه أنت فقط) و**API key** و**Özel anahtar** (المفتاح الخاص Ed25519 كاملاً بصيغة PEM — يبقى الحقل مخفياً) و**Tek kullanımlık kod**، ثم اضغط **"Anahtarı doğrula ve kaydet"** (تحقّق واحفظ). يفحص التطبيق أذونات المفتاح على Binance قبل حفظ أي شيء: المفتاح الذي يسمح بالسحب أو التحويل الشامل يُرفض ولا يُحفظ في أي مكان، وتقول اللوحة أيّ إذن يجب تعطيله؛ والمفتاح الخاص الذي ليس Ed25519 PEM يُرفض أيضاً. المفتاح المقبول يُخزَّن مشفَّراً بمفتاحك الرئيسي؛ لا يُعرض أي جزء منه ولا يُطبع ولا يُعاد أبداً. بعد ذلك يعرض القسم نفسه هل يوجد مفتاح محفوظ، وأذوناته كما أبلغ عنها Binance، ومتى تغيّر آخر مرة، وعدّاد الثلاثين يوماً (يحذف Binance المفتاح غير المقيَّد بعنوان IP بعد 30 يوماً بلا أوامر — مُقاس). مع مفتاح جديد يستخدم المحرك الأحدث؛ ولا يُغلَق المفتاح القديم على Binance — احذفه هناك بنفسك.
 
 ### 3. اختر فاصل النبضة (يولد فارغاً)
 
@@ -266,7 +334,7 @@ npm run rotate:encryption-key
 
 ### يُرفض مفتاح Binance الخاص بي بـ **P1_WITHDRAWALS** أو **P1_UNIVERSAL_TRANSFER** أو **KEY_TYPE_NOT_ED25519**
 
-أنشئ على Binance مفتاح API جديداً من نوع **Ed25519** مع **تعطيل** السحب والتحويل الشامل، وقدّم ذلك المفتاح. المفتاح المرفوض لا يُخزَّن ولا يُسجَّل.
+أنشئ على Binance مفتاح API جديداً من نوع **Ed25519** مع **تعطيل** السحب والتحويل الشامل، وأضف ذلك المفتاح من اللوحة. في اللوحة يظهر الرفض بعبارة "Anahtar REDDEDİLDİ: …" (رُفض المفتاح) ويسمّي الإذن الواجب تعطيله. المفتاح المرفوض لا يُخزَّن ولا يُسجَّل.
 
 ### يجيب Binance بـ 451 "Service unavailable from a restricted location"
 

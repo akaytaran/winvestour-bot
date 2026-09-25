@@ -1,6 +1,6 @@
 // G04 madde 10: sahip kimlik bilgilerini ÜRET ve yalnız DEPO DIŞI yedek klasörüne yaz (E-2, E-3). Ekrana/sohbete hiçbir değer basılmaz; yalnız dosya yolları ve karma özetleri.
 // Üretilen: parola (rastgele), parola karması (scrypt), TOTP sırrı (20 bayt, base32) + otpauth URI (telefona elle giriş), oturum imza sırrı (32 bayt base64).
-// Çıktı dosyaları: <yedek>/sahip-kimlik.txt (iş sahibi okur: parola + TOTP kurulum anahtarı) ve <yedek>/vercel-env-g04.json (Vercel REST gövdesi; yüklendikten sonra SİLİNİR).
+// Çıktı dosyaları: <yedek>/sahip-kimlik.txt (iş sahibi okur: parola + TOTP kurulum anahtarı) ve <yedek>/vercel-env-sahip.json (Vercel REST gövdesi; yüklendikten sonra SİLİNİR).
 // Vercel'e yazma bu betikte DEĞİL (betikler ağa çıkmaz; kapı kuralı) — `vercel api … --input <json>` ile ayrıca yapılır. Kullanım: npm run owner:credentials [-- --dir <klasör>]
 import { randomBytes, createHash } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -11,7 +11,7 @@ import { base32Encode, hashPassword, otpauthUri, totpAt, verifyPassword, matchTo
 const argDir = process.argv.indexOf("--dir"), dir = resolve(argDir > 0 ? process.argv[argDir + 1] : join(homedir(), "winvestour-yedek"));
 if (dir.startsWith(resolve(".") + "\\") || dir.startsWith(resolve(".") + "/")) { console.error("yedek klasörü depo içinde olamaz"); process.exit(1); }
 mkdirSync(dir, { recursive: true });
-const credFile = join(dir, "sahip-kimlik.txt"), envFile = join(dir, "vercel-env-g04.json");
+const credFile = join(dir, "sahip-kimlik.txt"), envFile = join(dir, "vercel-env-sahip.json");
 if (existsSync(credFile)) { console.error(`${credFile} zaten var — üzerine yazılmadı. Yenilemek için dosyayı taşıyın.`); process.exit(1); }
 
 const password = randomBytes(18).toString("base64url"); // 24 karakter, ~144 bit
@@ -34,4 +34,4 @@ writeFileSync(envFile, JSON.stringify([
   { key: "SESSION_SECRET", value: sessionSecret, type: "encrypted", target: ["production"] },
 ]), { mode: 0o600 });
 const fp = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 12);
-console.log(JSON.stringify({ credentialsFile: credFile, vercelEnvBody: envFile, fingerprints: { OWNER_PASSWORD_HASH: fp(hash), OWNER_TOTP_SECRET: fp(totpB32), SESSION_SECRET: fp(sessionSecret) }, note: "değerler yalnız dosyada; vercel-env-g04.json yüklendikten sonra silinir" }, null, 1));
+console.log(JSON.stringify({ credentialsFile: credFile, vercelEnvBody: envFile, fingerprints: { OWNER_PASSWORD_HASH: fp(hash), OWNER_TOTP_SECRET: fp(totpB32), SESSION_SECRET: fp(sessionSecret) }, note: "değerler yalnız dosyada; vercel-env-sahip.json yüklendikten sonra silinir" }, null, 1));

@@ -9,7 +9,7 @@ En cas de contradiction, le texte anglais fait foi.
 
 `winvestour-bot` est un petit moteur de trading que tu fais tourner **sur tes propres comptes** : il lit le marché spot de Binance avec **ta** clé API, décide selon des règles qu'un modèle Claude écrit une fois par jour, et peut passer de vrais ordres sur ton compte. Chaque installation est sa propre copie — la base de données, la clé Binance et la clé API Claude restent dans ton propre hébergement, et rien dans cette copie ne rappelle le mainteneur. Il s'adresse à une personne qui veut faire tourner un tel moteur pour elle-même, lire d'abord le code et commencer avec un petit montant.
 
-**Sommaire :** [Ce qu'il te faut](#ce-quil-te-faut) · [Installation](#installation) · [Première utilisation](#première-utilisation) · [Coût mensuel de fonctionnement](#coût-mensuel-de-fonctionnement) · [FAQ / dépannage](#faq--dépannage) · [Contribuer](CONTRIBUTING.md)
+**Sommaire :** [Ce qu'il te faut](#ce-quil-te-faut) · [Installer avec un assistant IA](#installer-avec-un-assistant-ia) · [Installation](#installation) · [Première utilisation](#première-utilisation) · [Coût mensuel de fonctionnement](#coût-mensuel-de-fonctionnement) · [FAQ / dépannage](#faq--dépannage) · [Contribuer](CONTRIBUTING.md)
 
 <!-- readme:warning -->
 ### ⚠️ À lire avant d'installer
@@ -48,6 +48,68 @@ Cette copie ne porte rien du mainteneur : le code ne lit aucun nom de domaine, i
 
 La clé API Binance n'est **pas** une variable d'environnement : elle est transmise via l'application après l'installation et stockée dans ta base de données, chiffrée avec ta clé maîtresse (voir « Première utilisation »).
 
+## Installer avec un assistant IA
+
+Copie le bloc ci-dessous tel quel et colle-le dans un assistant IA (Claude, ChatGPT, Cursor ou similaire). Il te fait passer une à une les étapes numérotées de la section Installation, te fait vérifier chaque résultat et ne te demande jamais de coller dans la conversation un mot de passe, une clé ou une valeur de `.env`. Le bloc est volontairement en anglais et identique dans chaque version linguistique de cette page.
+
+```text
+You are helping me install winvestour-bot, a self-hosted crypto trading bot for Binance, from its GitHub README. Follow these rules exactly and go one step at a time.
+
+1. Warning first. This software can place real orders with real money on its own decision. No profit is promised and the risk of loss is entirely mine. Before anything else, tell me to read the whole warning at the top of the README ("Read before you install") and wait until I say I have read it.
+
+2. Vercel Pro. The app must run on a Vercel account on the Pro plan: it runs a scheduled job every minute, and on the free Hobby plan the deployment fails. Tell me this before step 1 and ask whether I have the Pro plan.
+
+3. Secrets. Never ask me to paste passwords, API keys, TOTP secrets or .env values into this chat; tell me which command generates them on my computer and where to paste them.
+
+4. Steps. Take me through the README's Installation steps below, in this order, with exactly these commands. Do not add, skip, reorder or change any command. Step 14 is optional and not part of the setup.
+  1. Open the accounts you will need (about 30 minutes in total)
+     Check: you can sign in to all four services, and your Binance API key's permissions do not include withdrawals.
+  2. Get the code onto your computer
+     Check: the folder contains `package.json` and `.env.example`.
+  3. Install the dependencies from the copy's lock file
+     Command: `npm ci`
+     Check: the command ends without an error and a `node_modules` folder appears.
+  4. Generate the owner password, the TOTP secret and the session secret
+     Command: `npm run owner:credentials`
+     Check: the folder now contains sahip-kimlik.txt, vercel-env-sahip.json; the first holds your password and the TOTP setup key for your authenticator app, the second the three values for step 8. Nothing is printed on screen.
+  5. Generate the stop key (written to the same folder, not printed)
+     Command: `npm run stop:credential`
+     Check: durdurma-anahtari.txt, vercel-env-STOP_KEY_HASH.txt appear in the folder; the first holds the raw stop key you will type on the stop screen, the second its hash for step 8.
+  6. Generate the master key that encrypts your exchange keys (written to the same folder, not printed)
+     Command: `npm run key:encryption-master`
+     Check: sifreleme-ana-anahtari.txt, vercel-env-ENCRYPTION_MASTER_KEY.txt appear in the folder.
+  7. Create an empty PostgreSQL database
+     Check: two strings that start with `postgresql://`; the database has no tables yet.
+  8. Give every name in `.env.example` its value
+     Check: every name in `.env.example` has a value. If a required name is missing, the application stops at startup and names the missing variable.
+  9. Create the database tables
+     Command: `npx prisma migrate deploy`
+     Check: the output ends with `All migrations have been successfully applied.` A single migration named `0_baslangic` is applied; every settings table starts with one row; the risk settings are empty and switched off.
+  10. Check that the code builds on your computer (recommended before deploying)
+     Command: `npm run build`
+     Check: the command ends with the list of routes and no error; a `.next` folder appears.
+  11. Start it locally
+     Command: `npm start`
+     Check: the page shows `{"ok":true,"service":"engine",...}`, and `http://localhost:3000/panel` opens and says that the panel needs a session. The environment contract is validated as the server starts: if a required name is missing or malformed the server does not come up, and the error names the missing variable, never its value. Stop the server with Ctrl+C. Running the bot on your own computer is not supported yet: the engine is triggered by Vercel Cron. Local start is only for checking the installation.
+  12. Deploy on Vercel
+     Check: the deployment reaches Ready, and `https://<your-project>.vercel.app/api/health` returns `{"ok":true,...}`. On the Hobby plan the deployment fails instead, with a message that cron expressions running more often than once per day are not allowed.
+  13. Open the panel at `/panel` on your address, and the stop screen at `/durdur`
+     Check: both pages open (today the interface is in Turkish). The panel says it needs a session; the stop screen opens without a session and asks for the stop key. Continue with "First use".
+  14. OPTIONAL, NOT PART OF SETUP — MASTER KEY ROTATION
+     Command: `npm run rotate:encryption-key`
+     Check: each row is decrypted with the old key and re-wrapped with the new one in its own transaction, and its version is raised; the new envelope is checked against the new key BEFORE anything is written. Once no row is left on the old version, `ENCRYPTION_MASTER_KEY_PREVIOUS` can be deleted. No key value is ever printed.
+
+5. Checks. After each step, ask me to compare what I see with the Check line of that step. If it does not match, stop, do not improvise a fix, and send me to the README section "FAQ / troubleshooting" and the wiki page FAQ.
+
+6. First use. When the deployment is Ready, guide me through the README section "First use" in this order (the panel is in Turkish; the README gives each button's name):
+  1. Sign in (owner password, then a one-time code per sensitive action)
+  2. Add your Binance API key (withdrawals must be off)
+  3. Choose the tick interval (born empty)
+  4. Start and stop the engine
+  5. The entry switch (born ENABLED)
+  6. The cost cap and the Brain (born empty)
+```
+
 <!-- readme:install -->
 ## Installation
 
@@ -75,7 +137,7 @@ Résultat attendu : la commande se termine sans erreur et un dossier `node_modul
 npm run owner:credentials
 ```
 
-Résultat attendu : le dossier contient maintenant `sahip-kimlik.txt`, `vercel-env-g04.json` ; le premier fichier contient ton mot de passe et la clé de configuration TOTP pour ton application d'authentification, le second les trois valeurs pour l'étape 8. Rien n'est affiché à l'écran.
+Résultat attendu : le dossier contient maintenant `sahip-kimlik.txt`, `vercel-env-sahip.json` ; le premier fichier contient ton mot de passe et la clé de configuration TOTP pour ton application d'authentification, le second les trois valeurs pour l'étape 8. Rien n'est affiché à l'écran.
 
 5. Génère la clé d'arrêt (écrite dans le même dossier, non affichée) :
 
@@ -123,7 +185,7 @@ Résultat attendu : la commande se termine par la liste des routes et sans erreu
 npm start
 ```
 
-Résultat attendu : la page affiche `{"ok":true,"service":"engine",...}`, et `http://localhost:3000/panel` s'ouvre en indiquant que le panneau demande une session. Le contrat d'environnement est validé au démarrage : s'il manque un nom obligatoire ou s'il est mal formé, le serveur ne démarre pas, et l'erreur nomme la variable manquante, jamais sa valeur. Arrête le serveur avec Ctrl+C.
+Résultat attendu : la page affiche `{"ok":true,"service":"engine",...}`, et `http://localhost:3000/panel` s'ouvre en indiquant que le panneau demande une session. Le contrat d'environnement est validé au démarrage : s'il manque un nom obligatoire ou s'il est mal formé, le serveur ne démarre pas, et l'erreur nomme la variable manquante, jamais sa valeur. Arrête le serveur avec Ctrl+C. Faire tourner le bot sur ton propre ordinateur n'est pas encore pris en charge : le moteur est déclenché par Vercel Cron. Le démarrage local sert seulement à vérifier l'installation.
 
 12. Déploie sur Vercel : pousse ta copie sur ton propre compte GitHub, puis dans Vercel choisis **Add New → Project → Import** pour ce dépôt, garde le préréglage de framework **Next.js**, ajoute les variables d'environnement de l'étape 8 et appuie sur **Deploy**. Vercel exécute le script `vercel-build` : il refuse d'abord toute migration qui supprimerait des données, puis crée les tables et compile.
 
@@ -144,7 +206,9 @@ Résultat : chaque ligne est déchiffrée avec l'ancienne clé et ré-enveloppé
 <!-- readme:first-use -->
 ## Première utilisation
 
-Aujourd'hui l'interface est uniquement en **turc**. Tu te connectes sur la page du panneau avec le mot de passe du propriétaire ; ajouter la clé Binance et démarrer le moteur se font toujours avec une requête HTTP chacun (depuis la console de développement de ton navigateur ou n'importe quel client HTTP) pendant que tu es connecté. Chaque étape ci-dessous décrit exactement ce que le logiciel fait aujourd'hui ; rien ici n'est planifié ni promis.
+Aujourd'hui l'interface est uniquement en **turc**. Tu te connectes sur la page du panneau avec le mot de passe du propriétaire et tu ajoutes la clé Binance dans le panneau ; démarrer le moteur se fait toujours avec une requête HTTP (depuis la console de développement de ton navigateur ou n'importe quel client HTTP) pendant que tu es connecté. Chaque étape ci-dessous décrit exactement ce que le logiciel fait aujourd'hui ; rien ici n'est planifié ni promis.
+
+**Réglages :** chaque réglage du panneau — ce qu'il fait, sa valeur par défaut, s'il demande le code à usage unique, quand il prend effet — est décrit dans la page wiki [Settings guide](https://github.com/akaytaran/winvestour-bot/wiki/Settings-guide) (en anglais).
 
 ### 1. Se connecter (mot de passe du propriétaire, puis un code à usage unique par action sensible)
 
@@ -152,7 +216,7 @@ Ouvre `https://<ton-projet>.vercel.app/panel` dans ton navigateur. Sans session,
 
 ### 2. Ajouter ta clé API Binance (les retraits doivent être désactivés)
 
-Avec le cookie de session et l'en-tête `x-totp-code`, envoie `POST /api/exchange-key` avec `{"label": "<un nom quelconque>", "keyType": "ed25519", "apiKey": "<ta clé API>", "privateKeyPem": "<ta clé privée Ed25519, PEM>"}`. L'application vérifie les permissions de la clé sur Binance avant d'enregistrer quoi que ce soit : une clé avec retraits ou transfert universel activés est refusée avec **P1_WITHDRAWALS** / **P1_UNIVERSAL_TRANSFER** (HTTP 422), une clé qui n'est pas Ed25519 avec **KEY_TYPE_NOT_ED25519** (422). Une clé acceptée est stockée chiffrée avec ta clé maîtresse ; aucune partie n'en est jamais affichée ni renvoyée.
+Crée d'abord la clé sur Binance : génère sur ton propre ordinateur une paire de clés **Ed25519** avec le générateur de clés de Binance (la clé privée reste chez toi), puis sur Binance ouvre Profil → API Management → Create API → **Self-generated**, colle la clé publique, donne un nom et termine la vérification à deux facteurs ; Binance t'affiche alors la API key. Permissions : lecture **activée** (une clé sans lecture est refusée), trading spot **activé** pour que le moteur puisse passer des ordres, futures seulement si tu utilises les futures, retraits et transfert universel **désactivés**. Ensuite, dans le panneau, ouvre la section **"Binance API anahtarı"** (clé API Binance) → **"Anahtar ekle (tek kullanımlık kod ister)"** (ajouter une clé, demande le code à usage unique), remplis **Ad** (un nom pour toi seul), **API key**, **Özel anahtar** (toute la clé privée Ed25519 au format PEM — le champ reste masqué) et **Tek kullanımlık kod**, puis appuie sur **"Anahtarı doğrula ve kaydet"** (vérifier et enregistrer). L'application vérifie les permissions de la clé sur Binance avant de stocker quoi que ce soit : une clé avec retraits ou transfert universel activés est refusée et stockée nulle part, et le panneau dit quelle permission désactiver ; une clé privée qui n'est pas au format Ed25519 PEM est aussi refusée. Une clé acceptée est stockée chiffrée avec ta clé maîtresse ; aucune partie n'est jamais affichée, imprimée ou renvoyée. La même section montre ensuite si une clé est enregistrée, ses permissions telles que Binance les a indiquées, quand elle a été modifiée pour la dernière fois, et le compteur de 30 jours (Binance supprime une clé sans restriction IP après 30 jours sans ordre — mesuré). Avec une nouvelle clé, le moteur utilise la plus récente ; l'ancienne n'est pas fermée sur Binance — supprime-la toi-même là-bas.
 
 ### 3. Choisir l'intervalle de tick (naît vide)
 
@@ -232,7 +296,7 @@ L'intervalle de tick est vide (il naît vide). Choisis d'abord un intervalle dan
 
 ### Ma clé Binance est refusée avec **P1_WITHDRAWALS**, **P1_UNIVERSAL_TRANSFER** ou **KEY_TYPE_NOT_ED25519**
 
-Crée sur Binance une nouvelle clé API de type **Ed25519** avec retraits et transfert universel **désactivés**, et transmets celle-là. Une clé refusée n'est ni stockée ni journalisée.
+Crée sur Binance une nouvelle clé API de type **Ed25519** avec retraits et transfert universel **désactivés**, et ajoute celle-là dans le panneau. Dans le panneau, le refus s'affiche "Anahtar REDDEDİLDİ: …" (clé refusée) et nomme la permission à désactiver. Une clé refusée n'est ni stockée ni journalisée.
 
 ### Binance répond 451 « Service unavailable from a restricted location »
 

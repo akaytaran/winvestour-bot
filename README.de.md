@@ -9,7 +9,7 @@ Bei Widersprüchen gilt der englische Text.
 
 `winvestour-bot` ist eine kleine Handels-Engine, die du **auf deinen eigenen Konten** betreibst: sie liest den Binance-Spotmarkt mit **deinem** API-Schlüssel, entscheidet nach Regeln, die ein Claude-Modell einmal täglich schreibt, und kann echte Aufträge auf deinem Konto erteilen. Jede Installation ist ihre eigene Kopie — die Datenbank, der Binance-Schlüssel und der Claude-API-Schlüssel bleiben in deinem eigenen Hosting, und nichts in dieser Kopie ruft beim Betreuer an. Sie ist für eine Person gedacht, die so eine Engine für sich selbst betreiben, zuerst den Code lesen und mit einem kleinen Betrag beginnen will.
 
-**Inhalt:** [Was du brauchst](#was-du-brauchst) · [Installation](#installation) · [Erste Nutzung](#erste-nutzung) · [Monatliche Betriebskosten](#monatliche-betriebskosten) · [FAQ / Fehlerbehebung](#faq--fehlerbehebung) · [Mitwirken](CONTRIBUTING.md)
+**Inhalt:** [Was du brauchst](#was-du-brauchst) · [Mit einem KI-Assistenten installieren](#mit-einem-ki-assistenten-installieren) · [Installation](#installation) · [Erste Nutzung](#erste-nutzung) · [Monatliche Betriebskosten](#monatliche-betriebskosten) · [FAQ / Fehlerbehebung](#faq--fehlerbehebung) · [Mitwirken](CONTRIBUTING.md)
 
 <!-- readme:warning -->
 ### ⚠️ Vor der Installation lesen
@@ -48,6 +48,68 @@ Diese Kopie trägt nichts vom Betreuer: der Code liest keinen Domainnamen, es gi
 
 Der Binance-API-Schlüssel ist **keine** Umgebungsvariable: er wird nach der Installation über die App übermittelt und in deiner Datenbank gespeichert, verschlüsselt mit deinem Hauptschlüssel (siehe „Erste Nutzung“).
 
+## Mit einem KI-Assistenten installieren
+
+Kopiere den Block unten unverändert und füge ihn in einen KI-Assistenten ein (Claude, ChatGPT, Cursor oder ähnlich). Er führt dich Schritt für Schritt durch die nummerierten Schritte des Abschnitts Installation, lässt dich jedes Ergebnis prüfen und bittet dich nie, ein Passwort, einen Schlüssel oder einen `.env`-Wert in den Chat einzufügen. Der Block ist absichtlich auf Englisch und in jeder Sprachfassung dieser Seite gleich.
+
+```text
+You are helping me install winvestour-bot, a self-hosted crypto trading bot for Binance, from its GitHub README. Follow these rules exactly and go one step at a time.
+
+1. Warning first. This software can place real orders with real money on its own decision. No profit is promised and the risk of loss is entirely mine. Before anything else, tell me to read the whole warning at the top of the README ("Read before you install") and wait until I say I have read it.
+
+2. Vercel Pro. The app must run on a Vercel account on the Pro plan: it runs a scheduled job every minute, and on the free Hobby plan the deployment fails. Tell me this before step 1 and ask whether I have the Pro plan.
+
+3. Secrets. Never ask me to paste passwords, API keys, TOTP secrets or .env values into this chat; tell me which command generates them on my computer and where to paste them.
+
+4. Steps. Take me through the README's Installation steps below, in this order, with exactly these commands. Do not add, skip, reorder or change any command. Step 14 is optional and not part of the setup.
+  1. Open the accounts you will need (about 30 minutes in total)
+     Check: you can sign in to all four services, and your Binance API key's permissions do not include withdrawals.
+  2. Get the code onto your computer
+     Check: the folder contains `package.json` and `.env.example`.
+  3. Install the dependencies from the copy's lock file
+     Command: `npm ci`
+     Check: the command ends without an error and a `node_modules` folder appears.
+  4. Generate the owner password, the TOTP secret and the session secret
+     Command: `npm run owner:credentials`
+     Check: the folder now contains sahip-kimlik.txt, vercel-env-sahip.json; the first holds your password and the TOTP setup key for your authenticator app, the second the three values for step 8. Nothing is printed on screen.
+  5. Generate the stop key (written to the same folder, not printed)
+     Command: `npm run stop:credential`
+     Check: durdurma-anahtari.txt, vercel-env-STOP_KEY_HASH.txt appear in the folder; the first holds the raw stop key you will type on the stop screen, the second its hash for step 8.
+  6. Generate the master key that encrypts your exchange keys (written to the same folder, not printed)
+     Command: `npm run key:encryption-master`
+     Check: sifreleme-ana-anahtari.txt, vercel-env-ENCRYPTION_MASTER_KEY.txt appear in the folder.
+  7. Create an empty PostgreSQL database
+     Check: two strings that start with `postgresql://`; the database has no tables yet.
+  8. Give every name in `.env.example` its value
+     Check: every name in `.env.example` has a value. If a required name is missing, the application stops at startup and names the missing variable.
+  9. Create the database tables
+     Command: `npx prisma migrate deploy`
+     Check: the output ends with `All migrations have been successfully applied.` A single migration named `0_baslangic` is applied; every settings table starts with one row; the risk settings are empty and switched off.
+  10. Check that the code builds on your computer (recommended before deploying)
+     Command: `npm run build`
+     Check: the command ends with the list of routes and no error; a `.next` folder appears.
+  11. Start it locally
+     Command: `npm start`
+     Check: the page shows `{"ok":true,"service":"engine",...}`, and `http://localhost:3000/panel` opens and says that the panel needs a session. The environment contract is validated as the server starts: if a required name is missing or malformed the server does not come up, and the error names the missing variable, never its value. Stop the server with Ctrl+C. Running the bot on your own computer is not supported yet: the engine is triggered by Vercel Cron. Local start is only for checking the installation.
+  12. Deploy on Vercel
+     Check: the deployment reaches Ready, and `https://<your-project>.vercel.app/api/health` returns `{"ok":true,...}`. On the Hobby plan the deployment fails instead, with a message that cron expressions running more often than once per day are not allowed.
+  13. Open the panel at `/panel` on your address, and the stop screen at `/durdur`
+     Check: both pages open (today the interface is in Turkish). The panel says it needs a session; the stop screen opens without a session and asks for the stop key. Continue with "First use".
+  14. OPTIONAL, NOT PART OF SETUP — MASTER KEY ROTATION
+     Command: `npm run rotate:encryption-key`
+     Check: each row is decrypted with the old key and re-wrapped with the new one in its own transaction, and its version is raised; the new envelope is checked against the new key BEFORE anything is written. Once no row is left on the old version, `ENCRYPTION_MASTER_KEY_PREVIOUS` can be deleted. No key value is ever printed.
+
+5. Checks. After each step, ask me to compare what I see with the Check line of that step. If it does not match, stop, do not improvise a fix, and send me to the README section "FAQ / troubleshooting" and the wiki page FAQ.
+
+6. First use. When the deployment is Ready, guide me through the README section "First use" in this order (the panel is in Turkish; the README gives each button's name):
+  1. Sign in (owner password, then a one-time code per sensitive action)
+  2. Add your Binance API key (withdrawals must be off)
+  3. Choose the tick interval (born empty)
+  4. Start and stop the engine
+  5. The entry switch (born ENABLED)
+  6. The cost cap and the Brain (born empty)
+```
+
 <!-- readme:install -->
 ## Installation
 
@@ -75,7 +137,7 @@ Erwartetes Ergebnis: der Befehl endet ohne Fehler, und ein Ordner `node_modules`
 npm run owner:credentials
 ```
 
-Erwartetes Ergebnis: der Ordner enthält jetzt `sahip-kimlik.txt`, `vercel-env-g04.json`; die erste Datei enthält dein Passwort und den TOTP-Einrichtungsschlüssel für deine Authenticator-App, die zweite die drei Werte für Schritt 8. Auf dem Bildschirm wird nichts ausgegeben.
+Erwartetes Ergebnis: der Ordner enthält jetzt `sahip-kimlik.txt`, `vercel-env-sahip.json`; die erste Datei enthält dein Passwort und den TOTP-Einrichtungsschlüssel für deine Authenticator-App, die zweite die drei Werte für Schritt 8. Auf dem Bildschirm wird nichts ausgegeben.
 
 5. Erzeuge den Stopp-Schlüssel (wird in denselben Ordner geschrieben, nicht angezeigt):
 
@@ -123,7 +185,7 @@ Erwartetes Ergebnis: der Befehl endet mit der Routenliste und ohne Fehler; ein O
 npm start
 ```
 
-Erwartetes Ergebnis: die Seite zeigt `{"ok":true,"service":"engine",...}`, und `http://localhost:3000/panel` öffnet sich und sagt, dass das Panel eine Sitzung braucht. Beim Start wird der Umgebungsvertrag geprüft: fehlt ein Pflichtname oder ist er fehlerhaft, startet der Server nicht, und der Fehler nennt die fehlende Variable, nie ihren Wert. Beende den Server mit Strg+C.
+Erwartetes Ergebnis: die Seite zeigt `{"ok":true,"service":"engine",...}`, und `http://localhost:3000/panel` öffnet sich und sagt, dass das Panel eine Sitzung braucht. Beim Start wird der Umgebungsvertrag geprüft: fehlt ein Pflichtname oder ist er fehlerhaft, startet der Server nicht, und der Fehler nennt die fehlende Variable, nie ihren Wert. Beende den Server mit Strg+C. Den Bot auf deinem eigenen Computer zu betreiben wird noch nicht unterstützt: die Engine wird von Vercel Cron ausgelöst. Der lokale Start dient nur zur Prüfung der Installation.
 
 12. Deploye auf Vercel: pushe deine Kopie in dein eigenes GitHub-Konto, wähle dann in Vercel **Add New → Project → Import** für dieses Repository, behalte die Framework-Voreinstellung **Next.js**, füge die Umgebungsvariablen aus Schritt 8 hinzu und drücke **Deploy**. Vercel führt das Skript `vercel-build` aus: es lehnt zuerst jede Migration ab, die Daten löschen würde, dann legt es die Tabellen an und baut.
 
@@ -144,7 +206,9 @@ Ergebnis: jede Zeile wird in ihrer eigenen Transaktion mit dem alten Schlüssel 
 <!-- readme:first-use -->
 ## Erste Nutzung
 
-Heute ist die Oberfläche nur auf **Türkisch**. Du meldest dich auf der Panel-Seite mit dem Eigentümer-Passwort an; den Binance-Schlüssel hinzufügen und die Engine starten geschehen weiterhin mit je einer HTTP-Anfrage (aus der Entwicklerkonsole deines Browsers oder einem beliebigen HTTP-Client), während du angemeldet bist. Jeder Schritt unten beschreibt genau, was die Software heute tut; nichts hier ist geplant oder versprochen.
+Heute ist die Oberfläche nur auf **Türkisch**. Du meldest dich auf der Panel-Seite mit dem Eigentümer-Passwort an und fügst den Binance-Schlüssel im Panel hinzu; das Starten der Engine geschieht weiterhin mit einer HTTP-Anfrage (aus der Entwicklerkonsole deines Browsers oder einem beliebigen HTTP-Client), während du angemeldet bist. Jeder Schritt unten beschreibt genau, was die Software heute tut; nichts hier ist geplant oder versprochen.
+
+**Einstellungen:** jede Einstellung im Panel — was sie tut, ihr Standardwert, ob sie den Einmalcode braucht, wann sie wirkt — ist im [Settings guide](https://github.com/akaytaran/winvestour-bot/wiki/Settings-guide) des Wikis beschrieben (auf Englisch).
 
 ### 1. Anmelden (Eigentümer-Passwort, dann ein Einmalcode pro sensibler Aktion)
 
@@ -152,7 +216,7 @@ Heute ist die Oberfläche nur auf **Türkisch**. Du meldest dich auf der Panel-S
 
 ### 2. Deinen Binance-API-Schlüssel hinzufügen (Auszahlungen müssen aus sein)
 
-Sende mit dem Sitzungs-Cookie und dem Header `x-totp-code` `POST /api/exchange-key` mit `{"label": "<beliebiger Name>", "keyType": "ed25519", "apiKey": "<dein API-Schlüssel>", "privateKeyPem": "<dein privater Ed25519-Schlüssel, PEM>"}`. Die App prüft die Berechtigungen des Schlüssels bei Binance, bevor sie etwas speichert: ein Schlüssel mit aktivierten Auszahlungen oder universellen Transfers wird mit **P1_WITHDRAWALS** / **P1_UNIVERSAL_TRANSFER** (HTTP 422) abgelehnt, ein Schlüssel, der nicht Ed25519 ist, mit **KEY_TYPE_NOT_ED25519** (422). Ein angenommener Schlüssel wird mit deinem Hauptschlüssel verschlüsselt gespeichert; kein Teil davon wird je ausgegeben oder zurückgegeben.
+Erstelle zuerst den Schlüssel bei Binance: Erzeuge mit dem Schlüsselgenerator von Binance auf deinem eigenen Computer ein **Ed25519**-Schlüsselpaar (der private Schlüssel bleibt bei dir), öffne dann bei Binance Profil → API Management → Create API → **Self-generated**, füge den öffentlichen Schlüssel ein, gib einen Namen an und schließe die Zwei-Faktor-Prüfung ab; Binance zeigt dir dann den API key. Berechtigungen: Lesen **an** (ein Schlüssel ohne Lesen wird abgelehnt), Spot-Handel **an**, damit die Engine Orders senden kann, Futures nur wenn du Futures nutzt, Auszahlungen und universeller Transfer **aus**. Öffne dann im Panel den Abschnitt **"Binance API anahtarı"** (Binance-API-Schlüssel) → **"Anahtar ekle (tek kullanımlık kod ister)"** (Schlüssel hinzufügen, braucht den Einmalcode), fülle **Ad** (ein Name nur für dich), **API key**, **Özel anahtar** (der ganze private Ed25519-Schlüssel im PEM-Format — das Feld bleibt verdeckt) und **Tek kullanımlık kod** aus und drücke **"Anahtarı doğrula ve kaydet"** (prüfen und speichern). Die App prüft die Berechtigungen des Schlüssels bei Binance, bevor sie etwas speichert: ein Schlüssel mit aktivierten Auszahlungen oder universellem Transfer wird abgelehnt und nirgends gespeichert, und das Panel sagt, welche Berechtigung auszuschalten ist; ein privater Schlüssel, der kein Ed25519-PEM ist, wird ebenfalls abgelehnt. Ein akzeptierter Schlüssel wird mit deinem Hauptschlüssel verschlüsselt gespeichert; kein Teil davon wird je angezeigt, ausgegeben oder zurückgegeben. Derselbe Abschnitt zeigt danach, ob ein Schlüssel gespeichert ist, seine Berechtigungen laut Binance, wann er zuletzt geändert wurde, und den 30-Tage-Zähler (Binance löscht einen Schlüssel ohne IP-Beschränkung nach 30 Tagen ohne Orders — gemessen). Mit einem neuen Schlüssel nutzt die Engine den neuesten; der alte wird bei Binance nicht geschlossen — lösche ihn dort selbst.
 
 ### 3. Das Tick-Intervall wählen (kommt leer zur Welt)
 
@@ -232,7 +296,7 @@ Das Tick-Intervall ist leer (es kommt leer zur Welt). Wähle zuerst ein Interval
 
 ### Mein Binance-Schlüssel wird mit **P1_WITHDRAWALS**, **P1_UNIVERSAL_TRANSFER** oder **KEY_TYPE_NOT_ED25519** abgelehnt
 
-Erstelle bei Binance einen neuen API-Schlüssel vom Typ **Ed25519** mit **deaktivierten** Auszahlungen und universellen Transfers und übermittle diesen. Ein abgelehnter Schlüssel wird nicht gespeichert und nicht protokolliert.
+Erstelle bei Binance einen neuen API-Schlüssel vom Typ **Ed25519** mit **deaktivierten** Auszahlungen und universellen Transfers und füge diesen im Panel hinzu. Im Panel lautet die Ablehnung "Anahtar REDDEDİLDİ: …" (Schlüssel abgelehnt) und nennt die auszuschaltende Berechtigung. Ein abgelehnter Schlüssel wird nicht gespeichert und nicht protokolliert.
 
 ### Binance antwortet 451 „Service unavailable from a restricted location“
 
