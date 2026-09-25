@@ -1,0 +1,44 @@
+{
+  "name": "winvestour-bot",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "vercel-build": "node scripts/gate-migration.mjs && prisma migrate deploy && next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:new": "prisma migrate dev --create-only",
+    "postinstall": "prisma generate",
+    "rotate:encryption-key": "tsx scripts/rotate-encryption-key.mjs",
+    "key:encryption-master": "tsx scripts/encryption-master-key.mts",
+    "owner:credentials": "tsx scripts/owner-credentials.mts",
+    "stop:credential": "tsx scripts/stop-credential.mts",
+    "gate:migration": "node scripts/gate-migration.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "next": "16.3.4",
+    "pg": "^8.23.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.4",
+    "prisma": "^7.10.0",
+    "tsx": "^4.23.13",
+    "typescript": "^5"
+  },
+  "description": "Open-source, self-hosted crypto trading bot for Binance — bring your own API keys"
+}

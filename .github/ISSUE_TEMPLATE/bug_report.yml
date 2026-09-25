@@ -1,0 +1,55 @@
+name: Bug report
+description: Something in winvestour-bot does not work as the README describes.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do NOT paste secrets.** Never paste an API key, password, TOTP secret, stop key, `.env` value or database connection string — not in text, logs or screenshots. Replace them with `<hidden>`.
+        Security problems do not belong here: use Security → Report a vulnerability.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what did you see instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: The release tag or commit you installed (for example v1.0.0).
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does it run?
+      options:
+        - Vercel (deployed)
+        - Local (npm start)
+        - Both
+    validations:
+      required: true
+  - type: textarea
+    id: messages
+    attributes:
+      label: Error messages or logs (secrets removed)
+      render: text
+  - type: checkboxes
+    id: no-secrets
+    attributes:
+      label: Secrets
+      options:
+        - label: I checked that this issue contains no API key, password, TOTP secret, stop key or `.env` value.
+          required: true

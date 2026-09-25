@@ -1,0 +1,46 @@
+name: Installation help
+description: You followed the README installation steps and got stuck.
+title: "[Install] "
+labels: ["installation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do NOT paste secrets.** Never paste an API key, password, TOTP secret, stop key, `.env` value or database connection string — not in text, logs or screenshots. Replace them with `<hidden>`.
+        You can also ask in Discussions → Q&A.
+  - type: input
+    id: step
+    attributes:
+      label: Which installation step?
+      description: The step number from the README "Installation" section (1–14) or "First use".
+    validations:
+      required: true
+  - type: textarea
+    id: expected-vs-seen
+    attributes:
+      label: Expected result vs. what you saw
+      description: Each README step lists an "Expected result". What did you see instead?
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Command output (secrets removed)
+      render: text
+  - type: dropdown
+    id: plan
+    attributes:
+      label: Vercel plan
+      options:
+        - Pro
+        - Hobby
+        - Not deployed yet
+    validations:
+      required: true
+  - type: checkboxes
+    id: no-secrets
+    attributes:
+      label: Secrets
+      options:
+        - label: I checked that this issue contains no API key, password, TOTP secret, stop key or `.env` value.
+          required: true

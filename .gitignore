@@ -1,0 +1,34 @@
+# --- sırlar (Anayasa E-2, S-2): hiçbir sürümde depoda bulunmaz ---
+.env
+.env.*
+!.env.example
+.tmp-secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+.vercel/
+
+# --- bağımlılık ve derleme ---
+node_modules/
+.next/
+out/
+build/
+dist/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- işletim sistemi / editör artıkları ---
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+npm-debug.log*
+.idea/
+.vscode/
+
+.vercel
+
+# --- üretilmiş ---
+src/generated/

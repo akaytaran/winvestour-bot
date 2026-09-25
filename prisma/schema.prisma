@@ -1,0 +1,358 @@
+// G02 — Neon şeması. Kaynak: belgeler/MIMARI.md §4 (7 tablo), ANAYASA v1.0. Tek kullanıcı: users/sessions/consents yok.
+// Düz metin sır sütunu YOKTUR (S-1): anahtarlar yalnız `*_ciphertext` (Bytes) alanlarında, G03'ün üreteceği zarf biçiminde durur.
+// Zarf sözleşmesi (G03 buna uyar; kapı ve DB CHECK bunu doğrular): bayt0 = 0x01 (sürüm), 12 bayt nonce, 16 bayt tag, ≥1 bayt şifreli metin ⇒ octet_length ≥ 30.
+// CHECK kısıtları Prisma şemasında ifade edilemez; prisma/migrations/*/migration.sql içinde elle eklidir ve kapı onların varlığını denetler.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Binance API anahtarı — şifreli. Yetki denetimi sonucu `restrictionsRaw`'da ham durur (P-1 kararı yanıttan verilir).
+model ExchangeKey {
+  id                         Int        @id @default(autoincrement())
+  label                      String
+  keyType                    String     @default("ed25519") @map("key_type") // S-4: yalnız ed25519 (CHECK)
+  apiKeyCiphertext           Bytes      @map("api_key_ciphertext") // zarf, CHECK
+  privateKeyCiphertext       Bytes      @map("private_key_ciphertext") // zarf, CHECK
+  encryptionKeyVersion       Int        @map("encryption_key_version") // E-3: dönüş için sürüm
+  publicKeyFingerprint       String     @map("public_key_fingerprint") // SHA-256(public key DER), sır değil
+  restrictionsRaw            Json       @map("restrictions_raw") // GET /sapi/v1/account/apiRestrictions ham yanıtı
+  ipRestrict                 Boolean    @map("ip_restrict")
+  enableReading              Boolean    @map("enable_reading")
+  enableSpotAndMarginTrading Boolean    @map("enable_spot_and_margin_trading")
+  enableFutures              Boolean    @map("enable_futures")
+  enableWithdrawals          Boolean    @map("enable_withdrawals") // P-1: CHECK = false
+  permitsUniversalTransfer   Boolean    @map("permits_universal_transfer") // P-1: CHECK = false
+  verifiedAt                 DateTime   @map("verified_at") // apiRestrictions ne zaman okundu
+  lastOrderAt                DateTime?  @map("last_order_at") // S-6: 30 gün kuralı için son emir zamanı
+  createdAt                  DateTime   @default(now()) @map("created_at")
+  revokedAt                  DateTime?  @map("revoked_at")
+  positions                  Position[]
+
+  @@map("exchange_keys")
+}
+
+/// Risk profili — TEK SATIR (CHECK id = 1). Sayılar A-1'de açık; sütun var, değer icat edilmedi (nullable).
+model RiskProfile {
+  id                     Int      @id @default(1)
+  aggressiveness         Int? // agresiflik seviyesi (tanım A-1)
+  maxTotalExposurePct    Decimal? @map("max_total_exposure_pct") @db.Decimal(6, 3) // K-9 portföy tavanı
+  maxSinglePositionPct   Decimal? @map("max_single_position_pct") @db.Decimal(6, 3) // K-9 tek pozisyon payı
+  leverage               Int      @default(1) // K-11: tavan kodda sabit, burada ayar
+  feeBudgetPct           Decimal? @map("fee_budget_pct") @db.Decimal(6, 3) // M-1 (A-1)
+  feeHealthRatioMax      Decimal? @map("fee_health_ratio_max") @db.Decimal(6, 3) // M-5 (A-1)
+  cooldownSeconds        Int?     @map("cooldown_seconds") // M-7 (A-1)
+  maxRoundTripsPerPeriod Int?     @map("max_round_trips_per_period") // M-7 (A-1)
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  @@map("risk_profile")
+}
+
+enum Market {
+  SPOT
+  FUTURES
+}
+
+enum PositionStatus {
+  OPENING
+  OPEN
+  CLOSING
+  CLOSED
+  FAILED_UNPROTECTED_CLOSED // K-2: koruma yerleştirilemedi, kapatıldı
+}
+
+/// Pozisyon: koruma emri kimliği zorunlu değil çünkü OPENING aşamasında henüz yok; OPEN durumunda CHECK ile zorunlu (K-2).
+model Position {
+  id                Int            @id @default(autoincrement())
+  exchangeKeyId     Int            @map("exchange_key_id")
+  exchangeKey       ExchangeKey    @relation(fields: [exchangeKeyId], references: [id])
+  market            Market
+  symbol            String
+  side              String // LONG | SHORT (CHECK)
+  entryPrice        Decimal        @map("entry_price") @db.Decimal(24, 10)
+  quantity          Decimal        @db.Decimal(24, 10)
+  peakPrice         Decimal?       @map("peak_price") @db.Decimal(24, 10) // K-10 tepe takibi
+  protectionOrderId String?        @map("protection_order_id") // K-1: borsadaki STOP_MARKET kimliği
+  takeProfitOrderId String?        @map("take_profit_order_id")
+  status            PositionStatus
+  openedAt          DateTime       @map("opened_at")
+  closedAt          DateTime?      @map("closed_at")
+  orders            Order[]
+  events            EngineEvent[]
+
+  @@index([status])
+  @@index([symbol, status])
+  @@map("positions")
+}
+
+/// Emir: borsa emir kimliği tekil; maliyet (komisyon) burada, dönem toplamı fee_ledger'da.
+model Order {
+  id              Int       @id @default(autoincrement())
+  positionId      Int?      @map("position_id")
+  position        Position? @relation(fields: [positionId], references: [id])
+  exchangeOrderId String    @unique @map("exchange_order_id")
+  clientOrderId   String?   @unique @map("client_order_id") // K-6: icra kimliği
+  symbol          String
+  market          Market
+  type            String // SPOT: MARKET | LIMIT | STOP_LOSS | TAKE_PROFIT | STOP_LOSS_LIMIT | TAKE_PROFIT_LIMIT · FUTURES (A-5): STOP_MARKET | TAKE_PROFIT_MARKET (CHECK)
+  side            String // BUY | SELL (CHECK)
+  quantity        Decimal   @db.Decimal(24, 10)
+  price           Decimal?  @db.Decimal(24, 10)
+  fee             Decimal   @default(0) @db.Decimal(24, 10)
+  feeAsset        String?   @map("fee_asset")
+  status          String
+  placedAt        DateTime  @map("placed_at")
+  rawResponse     Json?     @map("raw_response") // borsa yanıtı (anahtar içermez)
+
+  @@index([symbol, placedAt])
+  @@map("orders")
+}
+
+/// Dönem defteri (M-1, M-5): ödenen komisyon + funding, bütçe, brüt kâr. Dönem aralığı tekil.
+/// G09 (Tur 11): dönem = UTC takvim ayı; budget = capital × FEE_BUDGET_PCT/100, capital = dönem AÇILIŞINDA borsadan ölçülen hesap değeri (src/lib/fee-ledger). reserved = açık ön rezervasyonların
+/// tahmini toplamı (bütçe iki kez harcanamaz; CHECK ≥ 0). Kapı: fees_paid + funding_paid + reserved + tahmin ≤ budget (yalnız FEE_GATE_BY_CLASS sınıfları için; EXIT/PROTECTION bakmaz).
+model FeeLedger {
+  id              Int        @id @default(autoincrement())
+  periodStart     DateTime   @map("period_start")
+  periodEnd       DateTime   @map("period_end")
+  feesPaid        Decimal    @default(0) @map("fees_paid") @db.Decimal(24, 10) // yalnız BORSADAN okunan gerçek komisyon (quote_asset cinsinden; çevrim ölçülür)
+  fundingPaid     Decimal    @default(0) @map("funding_paid") @db.Decimal(24, 10) // M-3: funding ayrı kalem
+  fundingReceived Decimal    @default(0) @map("funding_received") @db.Decimal(24, 10) // Tur 39 (G22-h, Karar 2): ALINAN funding — yalnız KÂR; maliyeti/bütçeyi DÜŞÜRMEZ (CHECK >= 0, mutlak değer)
+  budget          Decimal    @db.Decimal(24, 10) // M-1: dönem bütçesi (mutlak)
+  grossPnl        Decimal    @default(0) @map("gross_pnl") @db.Decimal(24, 10) // M-5 oranı için
+  roundTrips      Int        @default(0) @map("round_trips") // M-7 tur sayacı
+  reserved        Decimal    @default(0) @db.Decimal(24, 10) // G09: açık ön rezervasyonlar (tahmin); gerçek gelince düşer
+  capital         Decimal?   @db.Decimal(24, 10) // G09: dönem açılışında ölçülen hesap değeri (CAPITAL_BASIS); bütçenin tabanı, Ö-1 kaynağı
+  takerRate       Decimal?   @map("taker_rate") @db.Decimal(12, 10) // G09: açılışta hesaptan okunan taker oranı — yalnız ÖN REZERVASYON tahmini için
+  quoteAsset      String     @default("USDT") @map("quote_asset") // G09: defterin tek para birimi
+  openedFrom      String?    @map("opened_from") // G09: ölçüm kaynağı ve zamanı (elle yazılmış sayı yok)
+  healthPausedAt  DateTime?  @map("health_paused_at") // G17 (Tur 24, M-5): sağlık duraklaması; NULL = yok — olay yalnız geçişte (K-8); eşik burada değil
+  entries         FeeEntry[]
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  @@unique([periodStart, periodEnd])
+  @@map("fee_ledger")
+}
+
+/// G09: emir başına komisyon kaydı. `ref` = icra kimliği (G10 client_order_id) ya da funding anahtarı — tekil: aynı emir için ikinci rezervasyon açılamaz.
+/// Durum: RESERVED (tahmin, gönderim öncesi) → SETTLED (gerçek, borsadan; CHECK: actual zorunlu) | RELEASED (emir çıkmadı/iptal; tahmin serbest) | UNCONVERTED (gerçek geldi, kur ölçülemedi; giriş kapalı).
+model FeeEntry {
+  id        Int       @id @default(autoincrement())
+  ledgerId  Int       @map("ledger_id")
+  ledger    FeeLedger @relation(fields: [ledgerId], references: [id])
+  ref       String    @unique
+  kind      String // FEE | FUNDING (CHECK)
+  cls       String // ENTRY | EXIT | PROTECTION | DISCOVERY | FUNDING (CHECK)
+  state     String // RESERVED | SETTLED | RELEASED | UNCONVERTED (CHECK)
+  estimated Decimal   @default(0) @db.Decimal(24, 10) // ön rezervasyon (quote); deftere KESİN yazılmaz
+  actual    Decimal?  @db.Decimal(24, 10) // borsanın bildirdiği gerçek komisyon, quote'a çevrilmiş (ölçülen kurla)
+  paid      Json? // [{asset, amount, rate, source}] — çevrim izi (Ö-1)
+  direction String    @default("PAID") // Tur 39: PAID | RECEIVED (CHECK); komisyon kaydı yalnız PAID (CHECK)
+  createdAt DateTime  @default(now()) @map("created_at")
+  settledAt DateTime? @map("settled_at")
+
+  @@index([ledgerId, state])
+  @@map("fee_entries")
+}
+
+enum EngineEventKind {
+  STOPPED // K-7/K-8: motor durdu (sebep zorunlu)
+  CHAIN_BREAK // K-4
+  IP_BANNED // 418/429
+  KEY_INVALID
+  KEY_EXPIRING // S-6
+  REGION_BLOCKED // S-5: 451
+  PROTECTION_FAILED // K-2
+  BUDGET_EXHAUSTED // M-1
+  HEALTH_PAUSED // M-5
+  RESUMED
+  POSITION_SKIPPED // M-4 (G12): firsat/kapasite yok - pozisyon ACILMADI, sebebi yazili. Durma DEGILDIR
+  LEVERAGE_REQUEST // Tur 48 (K-A winvestor-kaldirac-istegi-ayrintilari): sahibin kaldirac istegi (ret ya da kabul; reason = sonuc kodu). Durma DEGILDIR, BILDIRIMSIZ
+  ENTRY_SWITCH_OPENED // Tur 65 (K1 winvestor-s64-1-salter-bildirimi): giris salteri ACILDI (hassas eylem). Durma DEGILDIR, BILDIRIMLI; kapatma olay/bildirim URETMEZ
+}
+
+/// Motor olayları (K-4, K-8): sessiz durma yok — her durma buraya sebep ve borsa yanıtıyla yazılır.
+model EngineEvent {
+  id               Int             @id @default(autoincrement())
+  kind             EngineEventKind
+  reason           String // CHECK: boş olamaz
+  exchangeResponse Json?           @map("exchange_response")
+  positionId       Int?            @map("position_id")
+  position         Position?       @relation(fields: [positionId], references: [id])
+  openPositions    Int?            @map("open_positions") // K-8: bildirimde açık pozisyon durumu
+  requestDetails   Json?           @map("request_details") // Tur 48 (K-A): olayı doğuran İSTEĞİN ayrıntısı — kapalı anahtar listesi {by, symbol, requestedLeverage, cap}; serbest metin YOK (CHECK + yayıcı); borsa yanıtı DEĞİLDİR
+  at               DateTime        @default(now())
+
+  @@index([kind, at])
+  @@map("engine_events")
+}
+
+/// Motor kontrol bayrağı (G08, K-7) — TEK SATIR (CHECK id = 1). Kalıcı kopya; hızlı kopya Upstash `engine:control` aynı belgedir (src/lib/engine-control).
+/// Bayrak = ÇALIŞMA İZNİ: motor yalnız iki kopya da okunup ikisi de RUNNING ve permit_until geçmemişse çalışır; okunamayan/eksik/STOPPED/süresi dolmuş → DURMUŞ (kapalı arıza).
+model EngineControl {
+  id          Int       @id @default(1)
+  state       String // RUNNING | STOPPED (CHECK)
+  mode        String? // STOPPED'da zorunlu (CHECK): HOLD (yalnız durdur) | CLOSE_ALL (durdur ve kapat — NİYET; icra G11/G12). Varsayılan yok (K-7)
+  permitUntil DateTime? @map("permit_until") // RUNNING'de zorunlu (CHECK): çalışma izninin son anı; okuyucu yarıdan az kalınca CAS ile yeniler
+  by          String // stop-key | owner-totp (kim yazdı)
+  at          DateTime // durumun yazıldığı an (CAS anahtarı: yenileme yalnız değişmemişse)
+
+  @@map("engine_control")
+}
+
+/// Beyin çağrısı (B-1..B-4): girdi özeti + karması, doğrulama sonucu, üretilen kural. Anahtar/bakiye asla girmez (B-3).
+model BrainRun {
+  id               Int      @id @default(autoincrement())
+  model            String
+  inputSummary     String   @map("input_summary")
+  inputHash        String   @map("input_hash") // SHA-256, ham metin saklanmaz
+  validationOk     Boolean  @map("validation_ok")
+  validationErrors Json?    @map("validation_errors")
+  producedRule     Json?    @map("produced_rule") // K-5: sayısal parametreler, emir değil
+  latencyMs        Int?     @map("latency_ms")
+  inputTokens      Int?     @map("input_tokens") // Tur 25 (madde 3): sağlayıcının usage.input_tokens alanı; ölçülemezse NULL
+  outputTokens     Int?     @map("output_tokens") // Tur 25 (madde 3): usage.output_tokens
+  costUsd          Decimal? @map("cost_usd") @db.Decimal(12, 6) // Tur 25 (madde 4): bu çağrının fiyatlanmış maliyeti; jeton ölçülemediyse ÜST SINIRLA (sıfır değil)
+  at               DateTime @default(now())
+
+  @@index([at])
+  @@map("brain_runs")
+}
+
+/// Beyin ayarları (Tur 25, madde 1) — TEK SATIR (CHECK id = 1). İş sahibi talimatı: model, sıklık ve girdi büyüklüğü KOD DEĞİL AYARDIR; değişiklik anında etkilidir.
+/// risk_profile'dan ayrıdır (o K-9/M-1 risk yüzdeleri, bu maliyet parametreleri) ve ayrı hassas eylemdir (BRAIN_SETTINGS_CHANGE). Model adı açık listeden (fiyat tablosu, src/lib/brain-settings).
+/// Tavan sütunları NULL ⇒ kod TÜRETİR (aylık $ = 10 $ tavanı − ölçülen altyapı; günlük çağrı = sıklığın ima ettiği sayı + gün sınırı payı). Sayı icat edilmedi.
+model BrainSettings {
+  id             Int      @id @default(1)
+  model          String
+  callIntervalMs Int      @map("call_interval_ms")
+  candidates     Int
+  candleLimit    Int      @map("candle_limit")
+  monthlyCapUsd  Decimal? @map("monthly_cap_usd") @db.Decimal(12, 4) // madde 4: aylık Beyin harcama tavanı ($)
+  dailyCallCap   Int?     @map("daily_call_cap") // madde 4: günlük çağrı tavanı (RUN_UNRECORDED döngüsünü kesen tavan)
+  totalCapUsd      Decimal?              @map("total_cap_usd") @db.Decimal(12, 4) // Tur 65 (A-9, 20 Eyl satır 85): aylık TOPLAM maliyet tavanı ($/ay). NULL = girilmedi (boş kurulum)
+  capEmptyBehavior BrainCapEmptyBehavior @map("cap_empty_behavior") // Tur 65 (20 Eyl satır 87): tavan boşken davranış — varsayılan BRAIN_OFF, tohum göçte (@default YOK)
+  infraUsd         Decimal?              @map("infra_usd") @db.Decimal(12, 4) // Tur 66 (Üretim K2, 24 Eyl; defter 20 Eyl satır 85): aylık ALTYAPI maliyeti ($/ay), KURULUM AYARI. NULL = girilmedi ⇒ Beyin payı TÜRETİLMEZ
+  tickMs           Int?                  @map("tick_ms") // Tur 67 (Üretim K3 = [A], 24 Eyl; defter 20 Eyl satır 87): motorun TİK ARALIĞI (ms), KURULUM AYARI. NULL = girilmedi ⇒ RESUME izin vermez, motor tiklemez. İzin kopyasıyla taşınır
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("brain_settings")
+}
+
+/// Tur 65 (20 Eyl satır 87 = [A], davranış PARAMETRE): tavan BOŞKEN ne olur. BRAIN_OFF = Beyin (Claude) ÇAĞRILMAZ, motor tikler ve korur (varsayılan).
+/// NO_LIMIT = boş tavan "aylık $ sınırı yok" demektir (günlük çağrı tavanı yine geçerli). Harcamayı ARTIRAN yöne çevirmek hassas eylemdir (TOTP + E-1).
+enum BrainCapEmptyBehavior {
+  BRAIN_OFF
+  NO_LIMIT
+}
+
+/// Ayar değişikliği defteri (E-1 izi): kim, ne zaman, eski değer → yeni değer. Ayar yazımıyla AYNI işlemde yazılır (kapı zorlar).
+model BrainSettingChange {
+  id      Int      @id @default(autoincrement())
+  at      DateTime @default(now())
+  by      String
+  changes Json // [{ field, from, to }]
+
+  @@index([at])
+  @@map("brain_setting_changes")
+}
+
+/// Bildirim ayarları (Tur 28, G20 · U-2) — TEK SATIR (CHECK id = 1). İŞ SAHİBİ KARARI (2026-09-12): eleme = AYNI SEBEP İÇİN 30 DAKİKADA BİR KEZ ve "30" KOD DEĞİL AYARDIR (uydurma sayı, A-1: NOTIFY_DEDUP_WINDOW_MS).
+/// `mutedCodes` kapatma tercihinin saklanacağı YERDİR (Tur 27'de AÇIK bırakılmıştı; yer kararı iş sahibinin, 2026-09-17); para güvenliğine dokunan kodları KAPSAMAZ — kapsama kararı koddadır
+/// (`undismissable`: PROTECTION_FAILED ∪ STOPPED ∪ BUDGET_EXHAUSTED türleri ∪ KEY_INVALID, bugün 38), burada liste yalnız girdidir ve kapatılamaz bir kod yazılsa yok sayılır.
+/// `dedupUndismissable` ÖLÇÜLEN ÇELİŞKİNİN ayarıdır (rapor §5): eleme kapatılamaz kodları varsayılan olarak KAPSAMAZ (iş sahibi kararı), ama tik yolundaki iki gürültü kaynağı
+/// (MARKET_FEED_DOWN, POSITIONS_UNKNOWN) tam o kümededir ⇒ ölçülen 1 440 bildirim/gün bu varsayılanla düşmez. Açmak tek satır günceller, kod değişmez. Sessiz saat YOKTUR (karar 3).
+/// TUR 29 (2026-09-17, iş sahibi kararı K1 = [C]): çelişki SEBEBE GÖRE AYRI PENCEREYLE kapandı — kapatılamaz sınıf `dedupWindowUndismissableMs` (2 dk), diğerleri `dedupWindowMs` (30 dk).
+model NotifySettings {
+  id                         Int      @id @default(1)
+  mutedCodes                 String[] @default([]) @map("muted_codes") // kapatılan sebep kodları; kapatılamaz kodlar yazılsa bile yok sayılır (U-2, kod kesiyor)
+  dedupWindowMs              Int      @map("dedup_window_ms") // aynı sebep için eleme penceresi (ms); 0 = eleme yok. Başlangıç 1 800 000 UYDURMADIR → A-1 `NOTIFY_DEDUP_WINDOW_MS`
+  dedupUndismissable         Boolean  @default(false) @map("dedup_undismissable") // 2026-09-17 (Tur 29): kullanımdan kaldırıldı; yerine `dedup_window_undismissable_ms`. Sütun silme ayrı ve geri dönülmez bir iştir — DUR VE SOR. Tur 30 K2: SİLİNMEZ; ne olduğu veritabanı yorumunda (göç 20260917130000).
+  dedupWindowUndismissableMs Int      @map("dedup_window_undismissable_ms") // Tur 29 K1: kapatılamaz sınıfın eleme penceresi (ms); 0 = eleme yok. Başlangıç 120 000 UYDURMADIR → A-1 `NOTIFY_DEDUP_WINDOW_UNDISMISSABLE_MS`
+  updatedAt                  DateTime @updatedAt @map("updated_at")
+
+  @@map("notify_settings")
+}
+
+/// Cihaz kayıt jetonu (Tur 28, G20 madde 4) — bildirimin GİDECEĞİ ADRES. İŞ SAHİBİ KARARI (2026-09-17): jetonun saklanacağı yer belgede yazılı değildi; Neon seçildi (kalıcı:
+/// telefon aylarca açılmasa da adres durur). Jeton bir SIR DEĞİLDİR (kendi başına bildirim gönderilemez; gönderim servis hesabı imzası ister) ⇒ *_ciphertext değil düz sütun (S-1 kapsamı dışı).
+/// TİK YOLUNDA OKUNMAZ; bugün HİÇ okunmuyor (köprü bu tura alınmadı, madde 1): adres yazılır, okuyacak taraf sonraki turda gelir — kapı bunu ölçer, varsayılmaz.
+model DeviceToken {
+  id           Int       @id @default(autoincrement())
+  token        String    @unique // taşıyıcının verdiği kayıt jetonu (FCM kayıt jetonu); opak dize, yorumlanmaz
+  platform     String // android | web (CHECK)
+  label        String? // sahibin verdiği ad ("ev telefonu"); yokluğu bildirimi engellemez
+  registeredAt DateTime  @default(now()) @map("registered_at")
+  lastSeenAt   DateTime  @map("last_seen_at") // uygulama her açılışta kaydını yeniler; eski jeton buradan görülür
+  lastSendAt   DateTime? @map("last_send_at")
+  lastSendOk   Boolean?  @map("last_send_ok") // NULL = hiç denenmedi (0 değil, BİLİNMİYOR)
+
+  @@index([lastSeenAt])
+  @@map("device_tokens")
+}
+
+/// Risk/kaldıraç ayarları (Tur 36, G21 kalemleri b · d · g) — TEK SATIR (CHECK id = 1). İŞ SAHİBİ KARARLARI (2026-09-17): `winvestor-a5-futures-hesabi` ("önce kod, ama sabit değil — AYAR olarak"),
+/// `winvestor-acik-satis-short` ("üç kip de yazılır, varsayılan NONE"), `winvestor-m2-futures-esigi` = [A] ("şimdi sayı seçilmez"). Talimat: "bu kararlar yazılımda parametrik ve ayarlanabilir olursa beklemene gerek kalmaz".
+/// brain_settings kalıbının AYNISI: TEK okuma yolu (src/lib/risk-settings), kaynakta sabit YASAK (gate:risk-settings), değişiklik hassas eylem (RISK_SETTINGS_CHANGE, TOTP) ve E-1 defterine yazılır (risk_setting_changes, AYNI işlemde).
+/// VARSAYILANLAR KAPALI/NULL ⇒ KAPALI ARIZA: leverage_cap NULL ya da futures_enabled false iken futures yolu çağrıyı adlandırılmış sebeple REDDEDER; hiçbir sayı icat edilmez, üretim hattı beklemez.
+/// risk_profile.leverage (üretimde 1) BURAYA TAŞINMADI ve DOKUNULMADI: o borsaya bildirilen ÇALIŞMA kaldıracıdır, bu ise TAVANDIR (K-11). Sütun silmek geri dönülmezdir ve iş sahibinin yetkisindedir (DUR VE SOR).
+/// BİYOMETRİK KİLİT AYARI (Tur 40, G20 parça 2B). Tek satır; SIR YOK (S-1). Kilit yalnız panel EKRANINI kilitler — /durdur'a ASLA konmaz (K-7).
+model LockSettings {
+  id              Int      @id @default(1)
+  enabled         Boolean  @default(false) // tohum KAPALI: bugünkü davranış (panel doğrulayıcı sormaz)
+  repromptSeconds Int?     @map("reprompt_seconds") // açık sayfada yeniden sorma süresi (saniye). NULL = SEÇİLMEDİ ⇒ açık sayfa yeniden kilitlenmez; her panel açılışı yine sorar
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("lock_settings")
+}
+
+model RiskSettings {
+  id                Int      @id @default(1)
+  leverageCap       Int?     @map("leverage_cap") // K-11 TAVANI. NULL = SEÇİLMEDİ ⇒ futures yolu KAPALI (sayı bu turda seçilmedi, önerilmedi)
+  futuresEnabled    Boolean  @default(false) @map("futures_enabled") // A-5: hesap iş sahibinde; bayrak kapalıyken futures yolu reddeder
+  shortMode         String   @default("NONE") @map("short_mode") // NONE | CARRY_HEDGE | FREE (CHECK). Kip bir SAYI değil ADdır; açık liste kodda TİP, seçilen kip yalnız burada
+  m2FuturesMultiple Decimal? @map("m2_futures_multiple") @db.Decimal(12, 4) // M-2'nin FUTURES terimi. BİRİM: ÇARPAN (SPOT'un EDGE_MULTIPLE'ı ile aynı birim; bp DEĞİL). NULL = seçilmedi
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("risk_settings")
+}
+
+/// Risk ayarı değişikliği defteri (E-1 izi): kim, ne zaman, eski değer → yeni değer. Ayar yazımıyla AYNI işlemde yazılır (kapı zorlar) — brain_setting_changes'in kardeşi.
+model RiskSettingChange {
+  id      Int      @id @default(autoincrement())
+  at      DateTime @default(now())
+  by      String
+  changes Json // [{ field, from, to }]
+
+  @@index([at])
+  @@map("risk_setting_changes")
+}
+
+/// GİRİŞ ŞALTERİ (Tur 64, G28 kutu 4 · iş sahibi kararı 20 Eyl 2026). Tek satır (id=1).
+/// TOHUM KARARI GÖÇTEDİR, BURADA DEĞİL: `@default` YAZILMADI — çünkü "yeni kurulumda AÇIK doğar" ile
+/// "var olan kurulumun değeri göçle DEĞİŞMEZ" aynı anda geçerlidir ve bunu bir sütun varsayılanı ifade edemez.
+/// Göç boş kurulumu (hiç emir · hiç motor olayı · hiç borsa anahtarı YOK) AÇIK, dolu kurulumu bugünkü
+/// etkin değeriyle (KAPALI) tohumlar. Ölçümü Tur 64'ün göç kapısı ölçüm dosyasındadır (özel depo).
+model EntrySettings {
+  id        Int      @id @default(1)
+  enabled   Boolean
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("entry_settings")
+}
+
+/// E-1 DEFTERİ: giriş şalterinin her değişimi (kim, ne zaman, eski → yeni) — ayarla AYNI işlemde yazılır.
+model EntrySettingChange {
+  id      Int      @id @default(autoincrement())
+  at      DateTime @default(now())
+  by      String
+  changes Json // [{ field, from, to }]
+
+  @@index([at])
+  @@map("entry_setting_changes")
+}
