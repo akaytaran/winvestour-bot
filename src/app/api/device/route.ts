@@ -3,7 +3,8 @@
 // kaydı olmayan telefon bildirim ALAMAZ (U-2'nin sözü kaydın kolaylığına bağlıdır). Jeton yanıta geri YAZILMAZ; kaç cihaz kayıtlı olduğu sayıyla döner (U-3).
 import { withAccess } from "@/lib/access";
 import { registerDevice } from "@/lib/notify/devices";
-import { EN } from "@/lib/i18n/en";
+import { forRequest } from "@/lib/i18n/request";
+// Tur 79 (G34): insan metni isteğin dilinde (`forRequest`: seçim çerezi → Accept-Language → EN); durum kodu, ret kodu ve JSON anahtarları dilden bağımsız.
 export const dynamic = "force-dynamic";
 // BÖLGE (Tur 12, G11 · S-5): bölge ABD DIŞI sabit; Edge YASAK (Edge bölgesi çağırana göre seçilir). Değer src/lib/region.ts BINANCE_REGION ile birebir aynı olmalı (kapı ölçer).
 export const runtime = "nodejs";
@@ -13,5 +14,5 @@ export const POST = withAccess({ cls: "session" }, async (req) => {
   let body: unknown; try { body = await req.json(); } catch { body = null; }
   const r = await registerDevice(body, new Date());
   if (!r.ok) return Response.json({ ok: false, reason: r.reason }, { status: r.status });
-  return Response.json({ ok: true, devices: r.devices, note: EN.api.deviceRegistered }, { status: 200 });
+  return Response.json({ ok: true, devices: r.devices, note: forRequest(req).T.api.deviceRegistered }, { status: 200 });
 });

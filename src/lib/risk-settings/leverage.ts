@@ -11,7 +11,11 @@ import { LEVERAGE_ACCEPTED_PENDING, LEVERAGE_REQUESTER, recordLeverageRequest, s
 import { closedFuturesDriver, FUTURES_DRIVER_UNAVAILABLE, LEVERAGE_OUTCOME_UNKNOWN, type DriverResult, type DriverUnknown, type FuturesDriver } from "@/lib/orders/futures-driver";
 import { checkK6Window, K6_CANARY_MAX_AGE_MS, K6_CANARY_SCRIPT, K6_WINDOW_REFUSAL, type K6Deps } from "@/lib/orders/k6-canary-window";
 import { readFunding } from "@/lib/edge/funding-reader";
-import { FUTURES_REFUSAL_TEXT, readRiskRuntime, type FuturesRefusal, type SettingsDeps } from "./index";
+import { futuresRefusalText, readRiskRuntime, type FuturesRefusal, type SettingsDeps } from "./index";
+import { reqLang } from "@/lib/i18n/request";
+import { fill } from "@/lib/i18n";
+import { srvFor, RECORD_LANG } from "@/lib/i18n/srv";
+// TUR 79 (G34 · S5): cümleler SUNUCU SÖZLÜĞÜNDEN (src/lib/i18n/srv · leverage). Dil verilmezse İÇ KAYIT DİLİ (tr); uç isteğin dilini geçer. Ret/kip kodları dilden bağımsızdır.
 
 const D = Prisma.Decimal, MS_PER_HOUR = 3_600_000; // birim dönüşümü, eşik değil
 export const LEVERAGE_REFUSALS = { invalid: "leverage-refused:invalid-request", aboveCap: "leverage-refused:above-cap", keyNoFutures: "leverage-refused:key-futures-disabled",
@@ -30,56 +34,51 @@ export type LeverageAccepted = { ok: true; applied: false; accepted: true; text:
 export type LeverageDeps = SettingsDeps & { exchange?: ExchangeDeps; keyFutures?: () => Promise<boolean | null>; commission?: (symbol: string) => Promise<CommissionReading>; driver?: FuturesDriver; k6?: K6Deps };
 
 /** Üretimde futures komisyon kademesini okuyan yol YOK: kademe imzalı `/fapi/v1/commissionRate` ile okunur ve o çağrı G21-f ile doğar. Spot kademesi futures'a TAŞINMAZ, örnek oran yazılmaz. */
-export const unmeasuredFuturesCommission = async (): Promise<CommissionReading> => ({ ok: false, detail: "futures komisyon kademesi okunmadı: imzalı /fapi/v1/commissionRate çağrısı futures emir yolu ile doğar (G21 kalemi f, A-5); spot kademesi ya da örnek oran kullanılmaz" });
+export const unmeasuredFuturesCommission = async (): Promise<CommissionReading> => ({ ok: false, detail: srvFor(RECORD_LANG).leverage.commissionUnmeasured });
 
-const TEXT: Record<Exclude<LeverageRefusal, FuturesRefusal>, string> = {
-  "leverage-refused:invalid-request": "İstek okunamadı: sembol (ör. büyük harfli çift adı) ve kaldıraç (1 ya da daha büyük tam sayı) birlikte verilmeli. Hiçbir şey değişmedi.",
-  "leverage-refused:above-cap": "İstenen kaldıraç tavanı AŞIYOR, bu yüzden istek REDDEDİLDİ. Yazılım isteği sessizce tavana indirmez ve senin yerine bir sayı seçmez; tavanın altında bir kaldıraç iste ya da tavanı risk ayarından (kod ister) değiştir.",
-  "leverage-refused:key-futures-disabled": "Kayıtlı borsa anahtarının futures yetkisi yok (ya da okunamadı), bu yüzden borsaya hiçbir çağrı gönderilmedi. Futures hesabı açılıp anahtar bu yetkiyle yeniden kabul edilmeden kaldıraç uygulanamaz.",
-  "leverage-refused:load-unmeasured": "Bu kaldıracın komisyon ya da funding yükü ölçülemedi, bu yüzden işlem AÇILMADI. Komisyon ya da funding yükü sayıyla görünmeden kaldıraç uygulanmaz; ölçülemeyen sayı yerine “0” yazılmaz.",
-  "leverage-refused:unrecorded": "İsteğin kaydı olay defterine yazılamadı, bu yüzden istek REDDEDİLDİ: kaydı olmayan kaldıraç isteği ne uygulanır ne de sonucu bildirilir. Hiçbir şey değişmedi; biraz sonra yeniden dene.",
-  "leverage-refused:k6-canary-outside-window": `Kaldıraç açılmadan hemen önce çift icra kanaryasının (K-6: aynı sinyal iki kez icra edilemez) BU dağıtımın kodunda ve son ${K6_CANARY_MAX_AGE_MS / MS_PER_HOUR} saat içinde başarıyla koşulmuş olması gerekir; bu kayıt yok ya da okunamadı, bu yüzden istek REDDEDİLDİ. İstek deftere yazıldı, borsaya hiçbir çağrı gitmedi ve kaldıraç DEĞİŞMEDİ.`,
-  "futures-driver-unavailable": "Komisyon ve funding yükü ölçüldü ve yukarıda yazılı (bu iki yük giriş eşiğinin tamamı DEĞİLDİR: alış-satış farkı ve emir defteri derinliği giriş kararında ayrıca ölçülür, M-2). İstek tavanın içinde olduğu için kabul edildi ve deftere yazıldı; ama kaldıracı borsaya yazan sürücü henüz KAPALI, bu yüzden borsaya hiçbir çağrı gitmedi ve kaldıraç DEĞİŞMEDİ.",
-};
+/** Ret kodunun insan cümlesi (sözlük `leverage.text`); kod → anahtar eşlemesi burada, cümle sözlükte. Yeni ret kodu eklenirse derleyici eşlemeyi zorlar. */
+const TEXT_KEY = { "leverage-refused:invalid-request": "invalid", "leverage-refused:above-cap": "aboveCap", "leverage-refused:key-futures-disabled": "keyNoFutures", "leverage-refused:load-unmeasured": "loadUnmeasured",
+  "leverage-refused:unrecorded": "unrecorded", "leverage-refused:k6-canary-outside-window": "k6Window", "futures-driver-unavailable": "driverUnavailable" } as const satisfies Record<Exclude<LeverageRefusal, FuturesRefusal>, string>;
+const textOf = (refusal: Exclude<LeverageRefusal, FuturesRefusal>, lang: string): string => fill(srvFor(lang).leverage.text[TEXT_KEY[refusal]], { hours: K6_CANARY_MAX_AGE_MS / MS_PER_HOUR });
 const SYMBOL_RE = /^[A-Z0-9]{2,20}$/;
-const PREVIEW_ACCEPTED = "Önizleme: istenen kaldıraç tavanın içinde, komisyon ve funding yükü ölçüldü ve yukarıda yazılı. Bu yalnız önizlemedir: hiçbir şey kaydedilmedi ve uygulanmadı. İstek tek kullanımlık kodla gönderilirse deftere yazılır ve kaldıracı borsaya yazan sürücüye iletilir.";
 
 /** İsteği değerlendir. Fırlatmaz; borsaya yalnız GENEL (imzasız) funding uçları çağrılır ve yalnız futures yolu + anahtar yetkisi açıkken. Hiçbir dal kaydı değiştirmez; kabul uygulamak değildir. */
 export async function evaluateLeverage(input: unknown, deps: LeverageDeps = {}): Promise<LeverageOutcome | LeverageAccepted> {
+  const lang = deps.lang ?? RECORD_LANG, L = srvFor(lang).leverage;
   const i = (input ?? {}) as { symbol?: unknown; leverage?: unknown };
   const lev = typeof i.leverage === "string" && /^\d{1,4}$/.test(i.leverage) ? Number(i.leverage) : i.leverage;
   const requested = typeof i.symbol === "string" && SYMBOL_RE.test(i.symbol) && typeof lev === "number" && Number.isInteger(lev) && lev >= 1 ? { symbol: i.symbol, leverage: lev } : null;
   const no = (refusal: LeverageRefusal, detail: string, extra: Partial<LeverageOutcome> = {}): LeverageOutcome =>
-    ({ ok: false, applied: false, refusal, text: refusal.startsWith("futures-unavailable:") ? FUTURES_REFUSAL_TEXT[refusal as FuturesRefusal] : TEXT[refusal as keyof typeof TEXT], detail, requested, cap: null, load: null, exchangeCalls: 0, ...extra });
-  if (!requested) return no(LEVERAGE_REFUSALS.invalid, `sembol=${JSON.stringify(i.symbol)} kaldıraç=${JSON.stringify(i.leverage)}`);
-  const r = await readRiskRuntime(deps);
+    ({ ok: false, applied: false, refusal, text: refusal.startsWith("futures-unavailable:") ? futuresRefusalText(lang)[refusal as FuturesRefusal] : textOf(refusal as Exclude<LeverageRefusal, FuturesRefusal>, lang), detail, requested, cap: null, load: null, exchangeCalls: 0, ...extra });
+  if (!requested) return no(LEVERAGE_REFUSALS.invalid, fill(L.detail.invalid, { symbol: JSON.stringify(i.symbol), leverage: JSON.stringify(i.leverage) }));
+  const r = await readRiskRuntime({ ...deps, lang });
   if (!r.ok) return no("futures-unavailable:settings-unreadable", `${r.refusal}: ${r.detail}`);
   const cap = r.row.leverageCap;
-  if (cap === null) return no("futures-unavailable:leverage-cap-null", "risk_settings.leverage_cap NULL — K-11: tavansız kaldıraç yoktur");
-  if (requested.leverage > cap) return no(LEVERAGE_REFUSALS.aboveCap, `istenen ${requested.leverage}× > tavan ${cap}× (risk_settings.leverage_cap) — tavana indirilmedi`, { cap });
+  if (cap === null) return no("futures-unavailable:leverage-cap-null", L.detail.capNull);
+  if (requested.leverage > cap) return no(LEVERAGE_REFUSALS.aboveCap, fill(L.detail.aboveCap, { req: requested.leverage, cap }), { cap });
   const v = r.runtime.futures;
   if (!v.allowed) return no(v.refusal, v.detail, { cap });
   let key: boolean | null; try { key = await (deps.keyFutures ?? prismaKeyFutures)(); } catch { key = null; }
-  if (key !== true) return no(LEVERAGE_REFUSALS.keyNoFutures, `exchange_keys.enable_futures = ${String(key)} — borsaya çağrı gönderilmedi`, { cap });
-  const load = await loadOf(requested, v, deps);
+  if (key !== true) return no(LEVERAGE_REFUSALS.keyNoFutures, fill(L.detail.keyNoFutures, { value: String(key) }), { cap });
+  const load = await loadOf(requested, v, deps, lang);
   if (!load.load.funding.ok || !load.load.commission.ok) return no(LEVERAGE_REFUSALS.loadUnmeasured, [load.load.funding, load.load.commission].filter((x) => !x.ok).map((x) => x.detail).join(" · "), { cap, ...load });
   // TUR 50 (K-A, G21 şart 11): K-6 kanaryası "hemen önce" koşulmamışsa kabul YOK — sürücüye giden tek yol bu dönüşten geçer (kapalı-varsayılan; ayrıntı hangi şartın tutmadığını söyler)
   const k6 = await checkK6Window(deps.k6);
   if (!k6.ok) return no(LEVERAGE_REFUSALS.k6Window, `${K6_CANARY_SCRIPT}: ${k6.detail}`, { cap, ...load });
-  return { ok: true, applied: false, accepted: true, text: PREVIEW_ACCEPTED, detail: "tavanın içinde · futures açık · anahtar yetkili · yük ölçüldü — uygulama sürücüde (G21 kalemi f)", requested, cap, ...load };
+  return { ok: true, applied: false, accepted: true, text: L.preview, detail: L.detail.accepted, requested, cap, ...load };
 }
 
 /** U-4: seçilen kaldıraçta TEMİNATA göre yük. Funding dönem başına = kaldıraç × ölçülen oran (işaretli: pozitifse uzun yön öder); komisyon gidiş-dönüş = kaldıraç × 2 × taker kademesi. */
-async function loadOf(q: { symbol: string; leverage: number }, v: Extract<Awaited<ReturnType<typeof readRiskRuntime>>, { ok: true }>["runtime"]["futures"], deps: LeverageDeps): Promise<{ load: LeverageLoad; exchangeCalls: number }> {
-  const f = await readFunding(q.symbol, v, deps.exchange), L = new D(q.leverage);
+async function loadOf(q: { symbol: string; leverage: number }, v: Extract<Awaited<ReturnType<typeof readRiskRuntime>>, { ok: true }>["runtime"]["futures"], deps: LeverageDeps, lang: string): Promise<{ load: LeverageLoad; exchangeCalls: number }> {
+  const f = await readFunding(q.symbol, v, deps.exchange), L = new D(q.leverage), T = srvFor(lang).leverage.load;
   const funding: LeverageLoad["funding"] = f.ok
     ? { ok: true, rateBp: f.rateBp, perPeriodBp: L.mul(f.rateBp).toFixed(6), periodHours: f.periodMs / MS_PER_HOUR, source: f.source,
-        sentence: `Funding: her ${f.periodMs / MS_PER_HOUR} saatte bir, teminatının ${L.mul(f.rateBp).toFixed(6)} baz puanı (${q.leverage}× × ölçülen oran ${f.rateBp} bp; oran pozitifse uzun yön öder, negatifse kısa yön öder).` }
-    : { ok: false, refusal: f.refusal, detail: f.detail, sentence: `Funding yükü ölçülemedi (${f.refusal}); bu yüzden sayı gösterilmiyor.` };
-  let c: CommissionReading; try { c = await (deps.commission ?? unmeasuredFuturesCommission)(q.symbol); } catch (e) { c = { ok: false, detail: "komisyon kademesi okunamadı (" + ((e as Error)?.name ?? "hata") + ")" }; }
+        sentence: fill(T.funding, { hours: f.periodMs / MS_PER_HOUR, bp: L.mul(f.rateBp).toFixed(6), lev: q.leverage, rate: f.rateBp }) }
+    : { ok: false, refusal: f.refusal, detail: f.detail, sentence: fill(T.fundingUnmeasured, { refusal: f.refusal }) };
+  let c: CommissionReading; try { c = await (deps.commission ?? unmeasuredFuturesCommission)(q.symbol); } catch (e) { c = { ok: false, detail: fill(T.commissionReadFailed, { name: (e as Error)?.name ?? "error" }) }; }
   const commission: LeverageLoad["commission"] = c.ok
-    ? { ok: true, takerBp: c.takerBp, bothLegsBp: L.mul(c.takerBp).mul(2).toFixed(6), source: c.source, sentence: `Komisyon: pozisyona giriş ve çıkışta toplam teminatının ${L.mul(c.takerBp).mul(2).toFixed(6)} baz puanı (${q.leverage}× × 2 × taker kademesi ${c.takerBp} bp).` }
-    : { ok: false, detail: c.detail, sentence: "Komisyon yükü ölçülemedi; bu yüzden sayı gösterilmiyor." };
+    ? { ok: true, takerBp: c.takerBp, bothLegsBp: L.mul(c.takerBp).mul(2).toFixed(6), source: c.source, sentence: fill(T.commission, { bp: L.mul(c.takerBp).mul(2).toFixed(6), lev: q.leverage, taker: c.takerBp }) }
+    : { ok: false, detail: c.detail, sentence: T.commissionUnmeasured };
   return { load: { funding, commission }, exchangeCalls: f.ok ? 2 : f.sent };
 }
 
@@ -91,28 +90,28 @@ export async function leverageResponse(req: Request, deps: LeverageDeps = {}): P
   let input: unknown = null;
   if (req.method === "GET") { const u = new URL(req.url); input = { symbol: u.searchParams.get("symbol"), leverage: u.searchParams.get("leverage") }; }
   else { try { input = await req.json(); } catch { input = null; } }
-  const o = await evaluateLeverage(input, deps);
+  const lang = deps.lang ?? reqLang(req), R = srvFor(lang).leverage.record; // Tur 79: yanıtın insan metni isteğin dilinde; defter kaydı KODLARLA (dilden bağımsız)
+  const o = await evaluateLeverage(input, { ...deps, lang });
   if (req.method === "GET") return Response.json(o, { status: o.ok ? 200 : statusOf(o.refusal) });
   // KAYIT ÖNCE (sonuca göre dallanmadan): ret kendi koduyla, kabul "beklemede" koduyla yazılır. Yazılamazsa istek REDDEDİLİR ve sürücü ÇAĞRILMAZ (kapalı-varsayılan).
   const rec = await recordLeverageRequest(o.ok ? LEVERAGE_ACCEPTED_PENDING : o.refusal, o.requested, o.cap, deps.events);
-  const unrecorded = (why: string) => Response.json({ ...o, ok: false, applied: false, refusal: LEVERAGE_REFUSALS.unrecorded, text: TEXT[LEVERAGE_REFUSALS.unrecorded], detail: why, load: null, recorded: false }, { status: 503 });
-  if (!rec.ok) return unrecorded(`olay defterine yazılamadı (${rec.code}); asıl sonuç ${o.ok ? LEVERAGE_ACCEPTED_PENDING : o.refusal} bildirilmedi`);
+  const unrecorded = (why: string) => Response.json({ ...o, ok: false, applied: false, refusal: LEVERAGE_REFUSALS.unrecorded, text: textOf(LEVERAGE_REFUSALS.unrecorded, lang), detail: why, load: null, recorded: false }, { status: 503 });
+  if (!rec.ok) return unrecorded(fill(R.notWritten, { code: rec.code, result: o.ok ? LEVERAGE_ACCEPTED_PENDING : o.refusal }));
   if (!o.ok) return Response.json({ ...o, recorded: true }, { status: statusOf(o.refusal) });
   // ÇAĞRI SONRA: sürücü yalnız DEFTERE YAZILMIŞ kaydın kimliğiyle çağrılabilir (markalı tip). Sonucu AYNI satıra yazılır; yazılamazsa sonuç bildirilmez.
   // TUR 50 (S49-2) UZLAŞTIRMA: satırın kapanışı sürücünün KENDİ dönüşünden türer — olmadı (kendi kodu) · BİLMİYORUM (fırlattı / açıkça bilmiyorum / tanınmayan biçim). "Oldu" bugün tipte yok.
   let d: DriverResult;
-  try { d = classify(await (deps.driver ?? closedFuturesDriver).setLeverage({ recordId: rec.id, symbol: o.requested.symbol, leverage: o.requested.leverage })); }
-  catch (e) { d = unknownOf(`sürücü fırlattı (${(e as Error)?.name ?? "hata"}): çağrının borsaya ulaşıp ulaşmadığı bilinmiyor`); }
+  try { d = classify(await (deps.driver ?? closedFuturesDriver).setLeverage({ recordId: rec.id, symbol: o.requested.symbol, leverage: o.requested.leverage }), lang); }
+  catch (e) { d = unknownOf(fill(R.driverThrew, { name: (e as Error)?.name ?? "error" })); }
   const s = await settleLeverageRequest(rec.id, LEVERAGE_ACCEPTED_PENDING, d.refusal, deps.events);
-  if (!s.ok) return unrecorded(`sürücünün sonucu (${d.refusal}) kayıt #${rec.id} satırına yazılamadı (${s.code}); sonuç bildirilmedi, satır beklemede kaldı`);
-  if ("unknown" in d) return Response.json({ ok: false, applied: null, outcome: "unknown", refusal: d.refusal, text: UNKNOWN_TEXT, detail: d.detail, requested: o.requested, cap: o.cap, load: o.load, exchangeCalls: o.exchangeCalls + d.exchangeCalls, recorded: true }, { status: 502 });
-  return Response.json({ ok: false, applied: false, refusal: d.refusal, text: TEXT[d.refusal], detail: d.detail, requested: o.requested, cap: o.cap, load: o.load, exchangeCalls: o.exchangeCalls + d.exchangeCalls, recorded: true } satisfies LeverageOutcome & { recorded: true }, { status: 409 });
+  if (!s.ok) return unrecorded(fill(R.notSettled, { refusal: d.refusal, id: rec.id, code: s.code }));
+  if ("unknown" in d) return Response.json({ ok: false, applied: null, outcome: "unknown", refusal: d.refusal, text: srvFor(lang).leverage.unknownText, detail: d.detail, requested: o.requested, cap: o.cap, load: o.load, exchangeCalls: o.exchangeCalls + d.exchangeCalls, recorded: true }, { status: 502 });
+  return Response.json({ ok: false, applied: false, refusal: d.refusal, text: textOf(d.refusal, lang), detail: d.detail, requested: o.requested, cap: o.cap, load: o.load, exchangeCalls: o.exchangeCalls + d.exchangeCalls, recorded: true } satisfies LeverageOutcome & { recorded: true }, { status: 409 });
 }
 /** Sürücünün dönüşü yalnız TANINAN ret biçimindeyse "olmadı"dır; başka her biçim (ok:true dâhil — bugün "oldu" hâli yok) BİLMİYORUM sayılır: yazılım uygulanmış olabilecek kaldıracı "olmadı" diye kapatmaz. */
-const classify = (d: unknown): DriverResult => { const x = d as { ok?: unknown; unknown?: unknown; refusal?: unknown; detail?: unknown; exchangeCalls?: unknown; exchangeResponse?: unknown } | null;
+const classify = (d: unknown, lang: string = RECORD_LANG): DriverResult => { const x = d as { ok?: unknown; unknown?: unknown; refusal?: unknown; detail?: unknown; exchangeCalls?: unknown; exchangeResponse?: unknown } | null;
   if (x && x.ok === false && x.refusal === FUTURES_DRIVER_UNAVAILABLE && !("unknown" in x)) return d as DriverResult;
   if (x && x.ok === false && x.unknown === true && x.refusal === LEVERAGE_OUTCOME_UNKNOWN) return { ...x, detail: String(x.detail ?? ""), exchangeCalls: Number.isInteger(x.exchangeCalls) ? Number(x.exchangeCalls) : 0 } as DriverUnknown;
-  return unknownOf("sürücü tanınmayan bir sonuç döndürdü: kaldıracın borsada değişip değişmediği doğrulanamadı"); };
+  return unknownOf(srvFor(lang).leverage.record.unrecognized); };
 const unknownOf = (detail: string): DriverUnknown => ({ ok: false, unknown: true, refusal: LEVERAGE_OUTCOME_UNKNOWN, detail, exchangeCalls: 0, exchangeResponse: null });
-const UNKNOWN_TEXT = "Kaldıraç isteği borsaya yazan sürücüye iletildi ama sürücü sonucu doğrulayamadı: kaldıracın borsada değişip değişmediği BİLİNMİYOR. Kayıt “sonuç bilinmiyor” olarak kapatıldı; yazılım bunu şu an borsadan okuyarak doğrulayamıyor. Yeniden istemeden önce borsadaki kaldıracı kendin kontrol et.";
 const statusOf = (refusal: LeverageRefusal) => (refusal === LEVERAGE_REFUSALS.invalid ? 400 : refusal === "futures-unavailable:settings-unreadable" ? 503 : 409);

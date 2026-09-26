@@ -5,28 +5,30 @@
 // Tur 77 (K-C): metnin TEK kaynağı sözlüktür (`@/lib/i18n` — panel ağacında DEĞİL; K-7 içe aktarma grafiği panel 0). Çevrimdışı cümlesi `S.offline`. An tek biçimleyiciden.
 // Kapı: npm run gate:stop-service (13) · kanarya: npm run canary:stop-screen.
 import { useState } from "react";
-import { dict, fill } from "@/lib/i18n";
+import { fill, section } from "@/lib/i18n";
 import { fmt } from "@/lib/i18n/format";
+import { LangSelect, useActivateLang } from "@/lib/i18n/client";
 
-const S = dict().stop;
+// Tur 79 (G34): metin ETKİN DİLİN sözlüğünden, ERİŞİM ANINDA (`section("stop")`); sözlük eksik/bozuksa yaprak EN metnine düşer (completeDict) — düğme hiçbir dilde metinsiz kalmaz (K-7).
+//   Dil seçici yalnız dil kodunu çereze yazar; anahtar alanına, isteğe ve sonuca dokunmaz. Bu ekran panele BAĞLANMAZ (dil modülü src/lib/i18n, panel ağacı değil).
+const S = section("stop");
 type Mode = "HOLD" | "CLOSE_ALL";
 type Outcome = { ok?: boolean; reason?: string; durable?: boolean; mode?: Mode; closeRequested?: boolean; flag?: { state?: string; at?: string };
   persisted?: { neon?: boolean; upstash?: boolean }; event?: { ok?: boolean; id?: number }; retry?: { scheduled?: boolean; windowMs?: number } };
 type Phase = "boş" | "eksik" | "gönderiliyor" | "durdu" | "reddedildi" | "yapılandırılmamış" | "seçenek-yok" | "ağ-yok" | "beklenmeyen";
 
-const MODES: { value: Mode; title: string; text: string }[] = [
+const modes = (): { value: Mode; title: string; text: string }[] => [
   { value: "HOLD", title: S.modes.HOLD.title, text: S.modes.HOLD.text },
   { value: "CLOSE_ALL", title: S.modes.CLOSE_ALL.title, text: S.modes.CLOSE_ALL.text },
 ];
 const TONE: Record<"ok" | "warn" | "alarm" | "info", { bg: string; bd: string }> = {
   ok: { bg: "#0d2a16", bd: "#78e0a8" }, warn: { bg: "#2a220d", bd: "#ffd479" }, alarm: { bg: "#2a0d0d", bd: "#ff8a7a" }, info: { bg: "#0d1c2a", bd: "#8ec9ff" },
 };
-const OFFLINE: readonly string[] = S.offline;
 
 function lines(phase: Phase, r: Outcome | null): { tone: keyof typeof TONE; text: readonly string[] } {
   if (phase === "eksik") return { tone: "warn", text: [S.missing] };
   if (phase === "gönderiliyor") return { tone: "info", text: [S.waiting] };
-  if (phase === "ağ-yok") return { tone: "alarm", text: OFFLINE };
+  if (phase === "ağ-yok") return { tone: "alarm", text: S.offline };
   if (phase === "reddedildi") return { tone: "alarm", text: S.rejected };
   if (phase === "yapılandırılmamış") return { tone: "alarm", text: [S.unconfigured] };
   if (phase === "seçenek-yok") return { tone: "alarm", text: [S.noMode] };
@@ -34,7 +36,7 @@ function lines(phase: Phase, r: Outcome | null): { tone: keyof typeof TONE; text
   let at: string = S.atUnread; try { if (r.flag?.at) at = fmt.dateTime(r.flag.at); } catch { at = S.atUnread; }
   const out = [
     fill(S.accepted, { state: r.flag?.state === "STOPPED" ? S.stateStopped : fill(S.stateUnread, { state: r.flag?.state ?? S.notInAnswer }), at }),
-    `${fill(S.choice, { mode: MODES.find((m) => m.value === r.mode)?.title ?? S.notInAnswer })}${r.closeRequested ? S.closeRecorded : ""}`,
+    `${fill(S.choice, { mode: modes().find((m) => m.value === r.mode)?.title ?? S.notInAnswer })}${r.closeRequested ? S.closeRecorded : ""}`,
     fill(S.neon, { state: r.persisted?.neon ? S.written : S.neonUnconfirmed }),
     fill(S.upstash, { state: r.persisted?.upstash ? S.upstashWritten : S.upstashUnconfirmed }),
     r.event?.ok ? fill(S.eventOk, { id: r.event.id ?? S.notInAnswer }) : S.eventFailed,
@@ -44,6 +46,7 @@ function lines(phase: Phase, r: Outcome | null): { tone: keyof typeof TONE; text
 }
 
 export default function StopScreen() {
+  useActivateLang();
   const [mode, setMode] = useState<Mode | null>(null);
   const [stopKey, setStopKey] = useState("");
   const [phase, setPhase] = useState<Phase>("boş");
@@ -68,11 +71,12 @@ export default function StopScreen() {
   return (
     <main style={{ fontFamily: "system-ui, sans-serif", background: "#0b0b0c", color: "#e8e8ea", minHeight: "100vh", padding: "2rem 1rem" }}>
       <div style={{ maxWidth: 560, margin: "0 auto" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: ".6rem" }}><LangSelect id="dil-durdur" /></div>
         <h1 style={{ fontSize: "1.35rem", marginBottom: ".4rem" }}>{S.title}</h1>
         <p style={{ color: "#b4b4bb", lineHeight: 1.6, margin: "0 0 1.2rem" }}>{S.intro}</p>
         <fieldset style={{ border: "1px solid #3a3a40", borderRadius: 8, padding: ".8rem 1rem", margin: "0 0 1rem" }}>
           <legend style={{ padding: "0 .4rem" }}>{S.legend}</legend>
-          {MODES.map((m) => (
+          {modes().map((m) => (
             <label key={m.value} style={{ display: "flex", gap: ".6rem", alignItems: "flex-start", padding: ".5rem 0", cursor: "pointer" }}>
               <input type="radio" name="mode" value={m.value} checked={mode === m.value} onChange={() => setMode(m.value)} style={{ marginTop: ".3rem", width: "1.1rem", height: "1.1rem" }} />
               <span><strong>{m.title}</strong><br /><span style={{ color: "#b4b4bb", lineHeight: 1.5 }}>{m.text}</span></span>

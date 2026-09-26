@@ -219,7 +219,7 @@ Ergebnis: jede Zeile wird in ihrer eigenen Transaktion mit dem alten Schlüssel 
 <!-- readme:first-use -->
 ## Erste Nutzung
 
-Panel und Stopp-Bildschirm sind auf **Englisch** (weitere Sprachen sind geplant). Alles unten beschreibt genau, was die Software heute tut; nichts hier ist geplant oder versprochen. Das Panel hat vier Tabs — **Status · Settings · History · Technical** — und öffnet mit **Status**. Bildschirm- und Schaltflächennamen stehen unten genau so, wie sie erscheinen (Englisch).
+Panel und Stopp-Bildschirm gibt es auf **Englisch, Türkisch und Arabisch** (Arabisch von rechts nach links); die Sprache wählst du im Menü **Language** oben im Panel, auf dem Anmeldebildschirm oder auf dem Stopp-Bildschirm — ohne Auswahl öffnen sie sich in der Sprache deines Browsers, sonst auf Englisch (Deutsch, Russisch, Italienisch und Französisch sind geplant). Alles unten beschreibt genau, was die Software heute tut; nichts hier ist geplant oder versprochen. Das Panel hat vier Tabs — **Status · Settings · History · Technical** — und öffnet mit **Status**. Bildschirm- und Schaltflächennamen stehen unten genau so, wie sie erscheinen (Englisch).
 
 **Einstellungen:** jede Panel-Einstellung — was sie tut, ihr Standardwert, ob sie den Einmalcode braucht, wann sie wirkt — ist im [Settings guide](https://github.com/akaytaran/winvestour-bot/wiki/Settings-guide) des Wikis beschrieben (Englisch); die Bildschirme zeigt der [Panel guide](https://github.com/akaytaran/winvestour-bot/wiki/Panel-guide).
 
@@ -253,7 +253,7 @@ Während die Engine läuft, zeigt die Karte eine rote Schaltfläche **STOP**: w�
 
 ### 7. History und Technical
 
-**History** listet die letzten Positionen (Einstieg, Größe, Kommission, brutto und netto) und jede Einstellungsänderung (wer, wann, alt → neu). **Technical** bewahrt die vollständigen gemessenen Details, die das Panel liest — Engine-, Lauf- und Gesundheitskarten, Positionszeilen und woher jede Zahl kommt; einige dieser Server-Sätze sind bis zu einer späteren Version noch auf Türkisch.
+**History** listet die letzten Positionen (Einstieg, Größe, Kommission, brutto und netto) und jede Einstellungsänderung (wer, wann, alt → neu). **Technical** bewahrt die vollständigen gemessenen Details, die das Panel liest — Engine-, Lauf- und Gesundheitskarten, Positionszeilen und woher jede Zahl kommt; auch diese Server-Sätze folgen der Sprache des Panels.
 
 ### 8. Was diese Version nicht hat
 

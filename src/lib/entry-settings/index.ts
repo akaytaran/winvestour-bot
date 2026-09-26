@@ -26,6 +26,9 @@
 import type { PrismaClient, Prisma } from "@/generated/prisma/client";
 import { getDb } from "@/db/client";
 import { recordEntrySwitchOpened, type Deps as EventDeps, type EmitResult } from "@/lib/events";
+import { fill } from "@/lib/i18n";
+import { srvFor, RECORD_LANG } from "@/lib/i18n/srv";
+// TUR 79 (G34 · S5): cümleler SUNUCU SÖZLÜĞÜNDEN (src/lib/i18n/srv · entry). Dil verilmezse İÇ KAYIT DİLİ (tr); uç isteğin dilini geçer. Alanlar, kodlar ve durum kodları dilden bağımsızdır.
 
 export interface EntryRow { enabled: boolean; updatedAt?: Date | null }
 export type EntryNext = { enabled: boolean };
@@ -36,7 +39,8 @@ export interface EntrySwitchStore {
   write(next: EntryNext, by: string, changes: EntryChange[]): Promise<void>;
   changes(n: number): Promise<{ at: Date; by: string; changes: EntryChange[] }[]>;
 }
-export type EntryDeps = { store?: EntrySwitchStore; now?: () => number; events?: EventDeps };
+export type EntryDeps = { store?: EntrySwitchStore; now?: () => number; events?: EventDeps; /** Tur 79: dönen insan metninin dili (verilmezse iç kayıt dili) */ lang?: string };
+const ES = (deps: EntryDeps = {}) => srvFor(deps.lang ?? RECORD_LANG).entry;
 
 export const prismaEntryStore = (client?: PrismaClient): EntrySwitchStore => { const db = () => client ?? getDb(); return {
   read: async () => { const r = await db().entrySettings.findUnique({ where: { id: 1 } }); return r ? { enabled: r.enabled, updatedAt: r.updatedAt } : null; },
@@ -54,8 +58,8 @@ const errName = (e: unknown) => (e as { name?: string })?.name ?? "error";
 export async function readEntrySettings(deps: EntryDeps = {}): Promise<EntryRead> {
   try {
     const r = await (deps.store ?? prismaEntryStore()).read();
-    return r ? { ok: true, enabled: r.enabled, updatedAt: r.updatedAt ? r.updatedAt.toISOString() : null } : { ok: false, detail: "entry_settings satırı yok (göç uygulanmamış olabilir); giriş yolu AÇIK sayılmaz" };
-  } catch (e) { return { ok: false, detail: `entry_settings okunamadı (${errName(e)}); giriş yolu AÇIK sayılmaz` }; }
+    return r ? { ok: true, enabled: r.enabled, updatedAt: r.updatedAt ? r.updatedAt.toISOString() : null } : { ok: false, detail: ES(deps).noRow };
+  } catch (e) { return { ok: false, detail: fill(ES(deps).readFailed, { name: errName(e) }) }; }
 }
 
 export type EntryVerdict = { allowed: true; detail: string } | { allowed: false; refusal: "ENTRY_SWITCH_OFF" | "ENTRY_SETTINGS_UNREADABLE"; detail: string };
@@ -67,8 +71,8 @@ export async function entrySwitch(deps: EntryDeps = {}): Promise<EntryVerdict> {
   const r = await readEntrySettings(deps);
   if (!r.ok) return { allowed: false, refusal: "ENTRY_SETTINGS_UNREADABLE", detail: r.detail };
   return r.enabled
-    ? { allowed: true, detail: `giriş şalteri AÇIK (ayar; en son değişim ${r.updatedAt ?? "bilinmiyor"})` }
-    : { allowed: false, refusal: "ENTRY_SWITCH_OFF", detail: "giriş şalteri KAPALI (ayar): giriş emri gönderilmez; çıkış, koruma ve durdurma etkilenmez" };
+    ? { allowed: true, detail: fill(ES(deps).allowed, { at: r.updatedAt ?? ES(deps).unknownAt }) }
+    : { allowed: false, refusal: "ENTRY_SWITCH_OFF", detail: ES(deps).off };
 }
 
 /** Değiştirilebilir alanların AÇIK LİSTESİ. Başka ad yamaya giremez (`id`, `updatedAt` dâhil). */
@@ -77,12 +81,12 @@ export type EntryPatch = { enabled?: unknown };
 export type EntryValidation = { ok: true; next: EntryNext; changes: EntryChange[] } | { ok: false; errors: string[] };
 
 /** SAF DOĞRULAMA — fırlatmaz, depoya dokunmaz. Yama BÜTÜNDÜR: bir alan geçersizse hiçbir alan uygulanmaz. */
-export function validateEntryPatch(cur: EntryNext, patch: EntryPatch): EntryValidation {
-  const errors: string[] = [], keys = Object.keys(patch ?? {});
-  for (const k of keys) if (!(ENTRY_FIELDS as readonly string[]).includes(k)) errors.push(`bilinmeyen alan: ${k} — yalnız ${ENTRY_FIELDS.join(" ve ")} değiştirilebilir`);
-  if (keys.length === 0) errors.push("yama boş: hangi alanın değişeceği bildirilmedi");
+export function validateEntryPatch(cur: EntryNext, patch: EntryPatch, lang: string = RECORD_LANG): EntryValidation {
+  const errors: string[] = [], keys = Object.keys(patch ?? {}), E = srvFor(lang).entry.errors;
+  for (const k of keys) if (!(ENTRY_FIELDS as readonly string[]).includes(k)) errors.push(fill(E.unknownField, { field: k, fields: ENTRY_FIELDS.join(E.and) }));
+  if (keys.length === 0) errors.push(E.empty);
   const next: EntryNext = { enabled: cur.enabled };
-  if ("enabled" in patch) { if (typeof patch.enabled !== "boolean") errors.push("giriş şalteri yalnız mantıksal (açık/kapalı) olabilir"); else next.enabled = patch.enabled; }
+  if ("enabled" in patch) { if (typeof patch.enabled !== "boolean") errors.push(E.notBoolean); else next.enabled = patch.enabled; }
   if (errors.length) return { ok: false, errors };
   const changes: EntryChange[] = [];
   if (next.enabled !== cur.enabled) changes.push({ field: "enabled", from: String(cur.enabled), to: String(next.enabled) });
@@ -96,26 +100,23 @@ export type EntryWrite = { ok: true; next: EntryNext; changes: EntryChange[]; ev
 export async function writeEntrySettings(patch: EntryPatch, by: string, deps: EntryDeps = {}): Promise<EntryWrite> {
   const store = deps.store ?? prismaEntryStore();
   let cur: EntryRow | null;
-  try { cur = await store.read(); } catch (e) { return { ok: false, status: 503, errors: [`giriş şalteri okunamadı (${errName(e)}); bilinmeyen hâlin üstüne yazılmaz`] }; }
-  if (!cur) return { ok: false, status: 409, errors: ["entry_settings satırı yok (göç uygulanmamış olabilir); değiştirilecek bir kayıt bulunamadı"] };
-  const v = validateEntryPatch({ enabled: cur.enabled }, patch);
+  const W = ES(deps).write;
+  try { cur = await store.read(); } catch (e) { return { ok: false, status: 503, errors: [fill(W.readFailed, { name: errName(e) })] }; }
+  if (!cur) return { ok: false, status: 409, errors: [W.noRow] };
+  const v = validateEntryPatch({ enabled: cur.enabled }, patch, deps.lang ?? RECORD_LANG);
   if (!v.ok) return { ok: false, status: 400, errors: v.errors };
   if (v.changes.length === 0) return { ok: true, next: v.next, changes: [], event: null };
-  try { await store.write(v.next, by, v.changes); } catch (e) { return { ok: false, status: 503, errors: [`giriş şalteri ya da E-1 defteri yazılamadı (${errName(e)}); ayar DEĞİŞMEDİ`] }; }
+  try { await store.write(v.next, by, v.changes); } catch (e) { return { ok: false, status: 503, errors: [fill(W.writeFailed, { name: errName(e) })] }; }
   // TUR 65 (S64-1, K1 = [C]): YALNIZ AÇMA (kapalı → açık) olay + bildirim üretir; KAPATMA SESSİZDİR. Olay ayar YAZILDIKTAN sonra doğar: ayar değişmediyse (yukarıdaki 503) olay da yoktur.
   // Olay yazılamazsa ayar GERİ ALINMAZ (E-1 defteri değişikliği zaten aynı işlemde tuttu); sonuç yanıtta kodla görünür ve yayıcının kademe 2 kaydı (stderr) düşer — sessiz kayıp yok (K-8).
   const opened = !cur.enabled && v.next.enabled;
-  const event = opened ? await recordEntrySwitchOpened(`kim=${by} · E-1 defteri aynı işlemde yazıldı · kapatma bildirim üretmez`, deps.events) : null;
+  const event = opened ? await recordEntrySwitchOpened(fill(srvFor(RECORD_LANG).entry.event, { by }), deps.events) : null;
   return { ok: true, next: v.next, changes: v.changes, event };
 }
 
 /** U-3 — YALNIZ VERİDEN CÜMLE: ekranda ve kütükte aynı cümle; okunamayan hâl "bilinmiyor" der. */
-export const entrySentence = (r: EntryRead): string =>
-  r.ok
-    ? (r.enabled
-        ? "Giriş yolu AÇIK: motor uygun fırsat bulduğunda kendi kararıyla GİRİŞ EMRİ gönderebilir. Emir çıkması için Binance anahtarı, sermaye ve risk ayarları da dolu olmalıdır."
-        : "Giriş yolu KAPALI: motor hiçbir giriş emri göndermez. Açık pozisyonların çıkışı ve koruması bundan etkilenmez; durdurma bu ayara hiç bağlı değildir.")
-    : `Giriş yolunun açık mı kapalı mı olduğu BİLİNMİYOR (${r.detail}). Okunamayan ayar "kapalı" sayılmaz ama giriş de açılmaz: motor giriş emri göndermez.`;
+export const entrySentence = (r: EntryRead, lang: string = RECORD_LANG): string => { const S = srvFor(lang).entry;
+  return r.ok ? (r.enabled ? S.sentenceOn : S.sentenceOff) : fill(S.sentenceUnknown, { detail: r.detail }); };
 
 /** ÖLÇÜM ÇIKTILARI İÇİN TEK DİZE (Tur 64). Kanaryalar eskiden hüküm satırında `ENTRY_ENABLED=false` sabitini
  *  basardı; sabit KALKTIĞI için artık kararın NEREDE durduğunu basarlar. Bir kanarya şalterin DEĞERİNİ

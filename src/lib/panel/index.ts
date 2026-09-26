@@ -14,6 +14,8 @@ import { readHealth, type HealthDeps, type HealthVerdict } from "@/lib/health";
 import { giveBackLevel } from "@/lib/protection/trailing";
 import { pickEnv } from "@/lib/env";
 import { redisPipeline } from "@/lib/upstash";
+import { fill } from "@/lib/i18n";
+import { srvFor, RECORD_LANG } from "@/lib/i18n/srv";
 
 export type Level = "OK" | "INFO" | "WARN" | "ALARM";
 const RANK: Record<Level, number> = { ALARM: 3, WARN: 2, INFO: 1, OK: 0 };
@@ -22,41 +24,35 @@ export type PanelText = { level: Level; title: string; what: string; money: stri
 /** Tur 77 (G32 parça 2, sade dil): uyarı kartı sebep KODUNU ve (varsa) sembolü de taşır — istemci sade dil cümlesini sözlükten KODLA seçer, cümleyi ayrıştırmaz (ek alan; hesap değişmez). */
 export type Card = { level: Level; title: string; lines: string[]; code?: string; symbol?: string };
 const say = (t: PanelText): string[] => [t.what, t.money, t.next];
+// TUR 79 (G34 · S5): cümleler SUNUCU SÖZLÜĞÜNDEN (src/lib/i18n/srv) — bu dosyada Türkçe (ya da başka dilde) cümle yok (gate:i18n (16)). Dil parametresi verilmezse İÇ KAYIT DİLİ (tr):
+//   iç çağrı (kanarya/kapı) bugünkü Türkçe cümlesini alır; uç (`/api/panel`) isteğin dilini geçer. Seviye (level) dilden bağımsızdır ve burada durur.
+const S = (lang: string) => srvFor(lang), PL = (lang: string) => srvFor(lang).panel;
 /** Ö-2: okunamayan değerin TEK yazılış biçimi. "Sorun yok" ya da 0 ASLA yazılmaz. */
-export const unknownText = (what: string, why: string): string => `${what} BİLİNMİYOR — ${why}. Sorun olmadığı VARSAYILMADI; bu değer okunana kadar buraya rakam yazılmaz.`;
+export const unknownText = (what: string, why: string, lang: string = RECORD_LANG): string => fill(S(lang).common.unknown, { what, why });
 
-/** İZİN KOPYASININ DÖRT REDDİ (engine-control'ün kendi sözcükleri; yüzey yeni sebep icat etmez). Record TAM: yeni bir reddediş eklenirse derleyici burayı da zorlar. */
-export const PERMIT_TEXT: Record<PermitDenial, PanelText> = {
-  UNREADABLE: { level: "ALARM", title: "Motorun çalışma izni okunamıyor", what: "Motorun çalışma iznini tutan hızlı depo (Upstash) bu açılışta okunamadı; motorun çalışıp çalışmadığı bilinmiyor.", money: "Yeni pozisyon açılmıyor. Açık pozisyonların koruma emirleri BORSADA duruyor ve altyapıdan bağımsız tetiklenir; paran korumasız değil.", next: "Depo döndüğünde motor kaldığı yerden sürer. Dönmezse izin en geç süresi dolunca söner ve motor kendiliğinden durur; yeniden başlatmak parolanı ve tek kullanımlık kodunu ister." },
-  NO_PERMIT: { level: "WARN", title: "Motorun çalışma izni yok", what: "Çalışma izni kopyası yok: ya hiç verilmedi ya da süresi dolduğu için kendiliğinden söndü.", money: "Motor çalışmıyor: yeni pozisyon açılmıyor ve fiyat hareketleri değerlendirilmiyor. Borsadaki koruma emirleri yerinde, paranın aşağı yönlü sigortası çalışıyor.", next: "Motoru yeniden başlatmak gerekiyor; başlatma parolanı ve tek kullanımlık kodunu ister." },
-  STOPPED: { level: "WARN", title: "Motor durduruldu", what: "Çalışma izni DURDURULDU olarak işaretli: durdurma düğmesi kullanılmış ya da bir koruma kuralı motoru durdurmuş.", money: "Yeni pozisyon açılmıyor. Açık pozisyonların borsadaki koruma emirleri duruyor; kayıp sınırın değişmedi.", next: "Aşağıdaki son sicil kaydı durdurmanın sebebini söyler. Sebep giderildikten sonra yeniden başlatma parolanı ve tek kullanımlık kodunu ister." },
-  PERMIT_EXPIRED: { level: "WARN", title: "Motorun çalışma izni süresi doldu", what: "Çalışma izni vardı ama süresi doldu ve yenilenmedi; motor bu yüzden kendini durdurdu.", money: "Yeni pozisyon açılmıyor. Borsadaki koruma emirleri duruyor; açık pozisyonların aşağı yönlü sigortası çalışmaya devam ediyor.", next: "İzin, kalıcı kayıtla buluşamadığında bilerek söner — bu bir arıza değil, sessiz çalışmaya karşı kurulmuş bir emniyet. Yeniden başlatma parolanı ve tek kullanımlık kodunu ister." },
-};
+/** İZİN KOPYASININ DÖRT REDDİ — seviye burada, cümle sözlükte. Record TAM: yeni bir reddediş eklenirse derleyici burayı da zorlar. */
+const PERMIT_LEVEL: Record<PermitDenial, Level> = { UNREADABLE: "ALARM", NO_PERMIT: "WARN", STOPPED: "WARN", PERMIT_EXPIRED: "WARN" };
+export const permitText = (lang: string = RECORD_LANG): Record<PermitDenial, PanelText> =>
+  Object.fromEntries((Object.keys(PERMIT_LEVEL) as PermitDenial[]).map((k) => [k, { level: PERMIT_LEVEL[k], ...PL(lang).permit[k] }])) as Record<PermitDenial, PanelText>;
+export const PERMIT_TEXT: Record<PermitDenial, PanelText> = permitText();
 /** SİCİLDEKİ SEBEBİN EKRAN KARŞILIĞI. Anahtarlar STOP_REASONS sicilinden gelir (derleyici zorlar): yüzey sebep uyduramaz, yalnız sicildeki kodu insan cümlesine çevirir. */
-export const PANEL_TEXT = {
-  STOP_BUTTON: { level: "WARN", title: "Motoru sen durdurdun", what: "Durdurma düğmesi kullanıldı ve motor durdu.", money: "Yeni pozisyon açılmıyor. Açık pozisyonlar ve borsadaki koruma emirleri olduğu gibi duruyor; komisyon da harcanmıyor.", next: "Hazır olduğunda yeniden başlat; başlatma parolanı ve tek kullanımlık kodunu ister." },
-  POSITIONS_UNKNOWN: { level: "ALARM", title: "Açık pozisyonların durumu okunamıyor", what: "Motorun her tikte okuduğu pozisyon özeti ne hızlı depodan ne de kalıcı kayıttan okunabildi.", money: "Motor bu durumda hiçbir iş yapmıyor: yeni pozisyon açmıyor, çıkış değerlendirmiyor. \"Pozisyon yok\" VARSAYILMADI. Borsadaki koruma emirleri duruyor.", next: "Depolardan biri döndüğünde özet yeniden kurulur ve motor kaldığı yerden sürer; dönene kadar giriş kapalı kalır." },
-  POSITION_COPY_MISMATCH: { level: "WARN", title: "Pozisyon özeti kalıcı kayıtla uyuşmadı", what: "Hızlı depodaki pozisyon özeti ile kalıcı kayıt farklı çıktı; kalıcı kayıt doğru kabul edildi ve özet yeniden yazıldı.", money: "Tutarlı bir okuma yapılana kadar yeni pozisyon açılmıyor. Çıkış ve borsadaki koruma çalışmaya devam ediyor.", next: "Bir sonraki karşılaştırma tutarlı çıkarsa giriş kendiliğinden yeniden açılır." },
-  MARKET_FEED_DOWN: { level: "WARN", title: "Piyasa fiyat akışı kesik", what: "Borsanın fiyat akışı son tikte okunamadı.", money: "Fiyat bilinmeden yeni pozisyon açılmıyor. Borsadaki koruma emirleri bizim akışımıza bağlı değil; tetiklenmeleri gerekiyorsa tetiklenirler.", next: "Akış döndüğünde fiyat değerlendirmesi kaldığı yerden sürer." },
-  BRAIN_SETTINGS_UNREADABLE: { level: "WARN", title: "Karar motorunun ayarları okunamıyor", what: "Hangi modelin, hangi sıklıkta ve ne kadar veriyle çalışacağını söyleyen ayar okunamadı.", money: "Karar motoru çağrılmadı: bunun için para harcanmadı ve yeni pozisyon açılmadı. Varsayılan bir ayara DÜŞÜLMEDİ, çünkü maliyeti bilinmeyen bir ayarla para harcanmaz.", next: "Ayar okunur okunmaz karar motoru kendiliğinden yeniden çalışır; çıkış ve koruma bu arada hiç etkilenmedi." },
-  BRAIN_SPEND_CEILING: { level: "INFO", title: "Karar motorunun harcama tavanı doldu", what: "Karar motoru bu dönem için konan harcama tavanını ya da bugünkü çağrı tavanını doldurdu.", money: "Bu bir arıza değil, bilerek konmuş bir tavan: tavanın üstünde tek kuruş harcanmıyor. Yeni pozisyon açılmıyor; ÇIKIŞ ve borsadaki koruma emirleri çalışmaya devam ediyor.", next: "Tavan bir sonraki dönemde kendiliğinden sıfırlanır. Daha erken çalışmasını istiyorsan aşağıdaki ayar bölümünden daha ucuz bir model ya da daha seyrek bir sıklık seçebilirsin." },
-  FEE_BUDGET_EXHAUSTED: { level: "INFO", title: "Dönemin komisyon bütçesi doldu", what: "Bu dönem ödenebilecek toplam komisyon için konan bütçe doldu.", money: "Yeni pozisyon açılmıyor; böylece komisyon erimesi duruyor. ÇIKIŞ ve borsadaki koruma emirleri bütçeye hiç bakmaz, çalışmaya devam eder.", next: "Bütçe bir sonraki dönemde yeniden ölçülen sermayeyle açılır." },
-  HEALTH_PAUSED: { level: "WARN", title: "Sağlık kapısı kapandı: komisyon kârı yiyor", what: "Ödenen komisyonun brüt kâra oranı, pozisyon açarken kullanılan giriş ölçütünün altına düştü: strateji kendi kurduğu bahsi tutturamıyor.", money: "Strateji kendini duraklattı: yeni pozisyon açılmıyor. ÇIKIŞ ve borsadaki koruma emirleri sürüyor, açık pozisyonların yönetimi değişmedi.", next: "Oran eşiğin altına dönerse duraklama kendiliğinden kalkar. Aşağıdaki sağlık satırı oranı, eşiği ve kalan payı rakamla gösterir." },
-  HEALTH_UNKNOWN: { level: "ALARM", title: "Sağlık göstergesi ölçülemiyor", what: "Komisyon defteri ya da kapanan pozisyon kayıtları okunamadığı için komisyon/kâr oranı hesaplanamadı.", money: "\"Sağlıklı\" VARSAYILMADI: yeni pozisyon açılmıyor. Çıkış ve borsadaki koruma sürer.", next: "Kayıtlar okunur okunmaz hüküm yeniden verilir ve giriş kendiliğinden açılır." },
-  PROTECTION_LOST: { level: "ALARM", title: "KORUMA EMRİ BORSADA YOK", what: "Açık bir pozisyonun borsadaki koruma (zarar durdur) emri bulunamadı — iptal edilmiş ya da düşmüş.", money: "Bu, paranın aşağı yönlü sigortasının kalkması demektir ve panelin en ağır uyarısıdır. Motor bu durumda pozisyonu DERHAL kapatır; kapatamazsa kendini durdurur ve seni bekler.", next: "Aşağıdaki pozisyon satırına bak: kapatıldıysa iş bitti. Kapatılamadıysa pozisyonu borsadan elle kapatman gerekir." },
-  PROTECTION_UNVERIFIABLE: { level: "ALARM", title: "Koruma emri borsada doğrulanamadı", what: "Koruma emrinin borsada durup durmadığı sorulamadı; sorgu düştü.", money: "Emir büyük olasılıkla yerinde ama DOĞRULANMADI, bu yüzden korumasız sayıldı: motor durdu ve yeni pozisyon açmıyor.", next: "Borsa sorgusu döndüğünde durum yeniden ölçülür. Beklemek istemiyorsan pozisyonun koruma emrini borsanın kendi ekranından doğrulayabilirsin." },
-  TICK_MISSED: { level: "WARN", title: "Bir ya da daha çok tik atlandı", what: "Motorun düzenli turu beklenen aralıkta koşmadı; arada bir boşluk var.", money: "Atlanan turda çıkış ve giriş değerlendirilmedi. Borsadaki koruma emirleri bu boşlukta da yerindeydi ve tetiklenmeleri gerekiyorsa tetiklendiler.", next: "Tur kendiliğinden yeniden başlar. Boşluk büyüdükçe aşağıdaki gecikme satırı bunu rakamla gösterir." },
-  CHAIN_BREAK: { level: "WARN", title: "Motorun sürekliliği koptu", what: "Motorun turunu devralması gereken halka devralmadı; zincir koptu ve nöbetçi yeniden kurdu.", money: "Kopuk geçen sürede yeni pozisyon açılmadı ve çıkış değerlendirilmedi; borsadaki koruma emirleri yerindeydi.", next: "Nöbetçi her dakika yeniden dener; tur yeniden başladığında bu uyarı kendiliğinden kalkar." },
-} as const satisfies Partial<Record<StopReasonCode, PanelText>>;
+const TEXT_LEVEL = {
+  STOP_BUTTON: "WARN", POSITIONS_UNKNOWN: "ALARM", POSITION_COPY_MISMATCH: "WARN", MARKET_FEED_DOWN: "WARN", BRAIN_SETTINGS_UNREADABLE: "WARN", BRAIN_SPEND_CEILING: "INFO", FEE_BUDGET_EXHAUSTED: "INFO",
+  HEALTH_PAUSED: "WARN", HEALTH_UNKNOWN: "ALARM", PROTECTION_LOST: "ALARM", PROTECTION_UNVERIFIABLE: "ALARM", TICK_MISSED: "WARN", CHAIN_BREAK: "WARN",
+} as const satisfies Partial<Record<StopReasonCode, Level>>;
+type TextCode = keyof typeof TEXT_LEVEL;
+export const panelText = (lang: string = RECORD_LANG): Record<TextCode, PanelText> =>
+  Object.fromEntries((Object.keys(TEXT_LEVEL) as TextCode[]).map((k) => [k, { level: TEXT_LEVEL[k], ...(PL(lang).text as Record<TextCode, Omit<PanelText, "level">>)[k] }])) as Record<TextCode, PanelText>;
+export const PANEL_TEXT: Record<TextCode, PanelText> = panelText();
 /** Madde 3'ün sekiz hâli EKRAN METNİ OLMADAN kalamaz: eksikse `never`'a `true` atanamaz ve derleme düşer. */
-type MissingText = Exclude<"POSITIONS_UNKNOWN" | "MARKET_FEED_DOWN" | "BRAIN_SETTINGS_UNREADABLE" | "BRAIN_SPEND_CEILING" | "HEALTH_PAUSED" | "PROTECTION_LOST" | "PROTECTION_UNVERIFIABLE" | "STOP_BUTTON", keyof typeof PANEL_TEXT>;
+type MissingText = Exclude<"POSITIONS_UNKNOWN" | "MARKET_FEED_DOWN" | "BRAIN_SETTINGS_UNREADABLE" | "BRAIN_SPEND_CEILING" | "HEALTH_PAUSED" | "PROTECTION_LOST" | "PROTECTION_UNVERIFIABLE" | "STOP_BUTTON", TextCode>;
 export const EVERY_REQUIRED_STATE_HAS_TEXT: [MissingText] extends [never] ? true : never = true;
-/** Sicildeki koddan ekran metni. Kod sicilde yoksa metin UYDURULMAZ: sicilin kendi etiketi kullanılır; o da yoksa "bilinmiyor". */
-export function textOf(code: string | null): PanelText | null {
+/** Sicildeki koddan ekran metni. Kod sicilde yoksa metin UYDURULMAZ: sicilin kendi etiketi (sicil metni, çevrilmez) cümlenin içinde durur; o da yoksa null. */
+export function textOf(code: string | null, lang: string = RECORD_LANG): PanelText | null {
   if (code === null) return null;
-  const t = (PANEL_TEXT as Partial<Record<string, PanelText>>)[code]; if (t) return t;
-  const m = (STOP_REASONS as Record<string, { label: string } | undefined>)[code];
-  return m ? { level: "WARN", title: m.label, what: `Sicile şu kayıt düştü: ${m.label}.`, money: "Bu kaydın para etkisi bu yüzeyde ayrıca yazılmadı; yeni pozisyon açılmadığını ve borsadaki koruma emirlerinin yerinde olduğunu varsayma, aşağıdaki satırlara bak.", next: "Bu sebep için ekran metni henüz yazılmadı; sicil kaydı yukarıdaki etiketle duruyor." } : null;
+  const t = (panelText(lang) as Partial<Record<string, PanelText>>)[code]; if (t) return t;
+  const m = (STOP_REASONS as Record<string, { label: string } | undefined>)[code], f = PL(lang).fallback;
+  return m ? { level: "WARN", title: f.title, what: fill(f.what, { label: m.label }), money: f.money, next: f.next } : null;
 }
 /** Sicil satırının yazdığı kod (`KOD · etiket · ayrıntı`). Ayrıntı EKRANA ÇIKMAZ (U-3: ham metin/kod göstermeyiz), yalnız kod sicilden okunur. */
 export const codeOf = (reason: string): string | null => { const c = reason.split(" · ")[0]?.trim() ?? ""; return /^[A-Z][A-Z0-9_]{2,}$/.test(c) ? c : null; };
@@ -89,55 +85,55 @@ export const prismaLastStop = (client?: PrismaClient) => async (): Promise<StopR
 
 // ---- CÜMLE KURUCULAR ----
 const n2 = (v: string | number) => Number(v).toFixed(2), n8 = (v: string | number) => Number(v).toFixed(8);
-/** Süre insan birimine çevrilir ve İŞARETSİZDİR: yön cümleyi kuran taraftadır (`when` = geçmiş, `till` = gelecek). Negatif sayı ekrana çıkamaz (U-3). */
-const dk = (ms: number) => { const a = Math.abs(ms); return a < 90_000 ? `${Math.round(a / 1000)} saniye` : a < 5_400_000 ? `${Math.round(a / 60_000)} dakika` : `${(a / 3_600_000).toFixed(1)} saat`; };
+/** Süre insan birimine çevrilir ve İŞARETSİZDİR: yön cümleyi kuran taraftadır (`when` = geçmiş, `till` = gelecek). Negatif sayı ekrana çıkamaz (U-3). Eşikler Tur 26'daki gibi; birim sözcüğü sözlükten. */
+const dk = (ms: number, lang: string) => { const a = Math.abs(ms), u = S(lang).units; return a < 90_000 ? fill(u.second, { n: Math.round(a / 1000) }) : a < 5_400_000 ? fill(u.minute, { n: Math.round(a / 60_000) }) : fill(u.hour, { n: (a / 3_600_000).toFixed(1) }); };
 const stamp = (t: number | string | Date) => `${new Date(t).toISOString().replace("T", " ").slice(0, 19)} UTC`;
-const when = (t: number | string | Date, now: number) => `${stamp(t)} (${dk(now - new Date(t).getTime())} önce)`;
+const when = (t: number | string | Date, now: number, lang: string) => fill(S(lang).common.ago, { stamp: stamp(t), d: dk(now - new Date(t).getTime(), lang) });
 /** Gelecekteki an. Geçmişte kalmışsa "önce" der — "eksi 600 saniye sonra" gibi bir cümle kurulamaz. */
-const till = (t: number, now: number) => (t >= now ? `${stamp(t)} (${dk(t - now)} sonra)` : `${stamp(t)} — bu an GEÇTİ (${dk(now - t)} önce)`);
+const till = (t: number, now: number, lang: string) => (t >= now ? fill(S(lang).common.later, { stamp: stamp(t), d: dk(t - now, lang) }) : fill(S(lang).common.passed, { stamp: stamp(t), d: dk(now - t, lang) }));
 /** P-2: brüt · komisyon · net AYRI AYRI. Brüt ölçülemiyorsa net de yazılmaz (Ö-2) ama ödenen komisyon yine ayrı kalem olarak görünür. */
-export function pnlLine(gross: string | null, fees: string, what: string): string {
-  const f = n8(fees);
-  if (gross === null) return `${what}: ${unknownText("brüt kâr/zarar", "dolum ya da fiyat kaydı okunamadı")} Bu pozisyon için bugüne dek ödenen gerçek komisyon ${f} USDT; net rakam brüt bilinmeden yazılamaz.`;
+export function pnlLine(gross: string | null, fees: string, what: string, lang: string = RECORD_LANG): string {
+  const f = n8(fees), P = PL(lang).pnl;
+  if (gross === null) return fill(P.noGross, { what, unknown: unknownText(P.grossWhat, P.grossWhy, lang), fee: f });
   const g = Number(gross), net = g - Number(fees);
-  const oran = g > 0 ? `Komisyon brüt kârın %${((Number(fees) / g) * 100).toFixed(1)}'ini aldı.` : g === 0 ? "Brüt kâr sıfır: ödenen komisyonun tamamı net zarardır." : "Pozisyon brütte zararda; ödenen komisyon bu zararın üstüne biniyor.";
-  return `${what}: brüt ${n8(gross)} USDT, ödenen gerçek komisyon ${f} USDT, NET ${n8(net)} USDT. ${oran}`;
+  const oran = g > 0 ? fill(P.ratio, { pct: ((Number(fees) / g) * 100).toFixed(1) }) : g === 0 ? P.zero : P.loss;
+  return fill(P.line, { what, gross: n8(gross), fee: f, net: n8(net), ratio: oran });
 }
 
 /** U-3 — VERİ METNE GÖMÜLMEZ: ekranda cümle, kayıtta ALAN. Okunamayan alan `null`'dır (0 değil, Ö-2); brüt/komisyon/net ayrı alanlardır (P-2). */
 export type PositionFacts = { entryPrice: string; quantity: string; notionalUsdt: string; peakPrice: string | null; giveBackLevel: string | null; protectionOrderId: string | null; protectionState: string | null; protectionCheckedAt: string | null; markPrice: string | null; grossUsdt: string | null; feeUsdt: string; netUsdt: string | null };
-export type PositionView = { id: number; symbol: string; open: boolean; level: Level; alarm: "PROTECTION_LOST" | "PROTECTION_UNVERIFIABLE" | null; title: string; lines: string[]; facts: PositionFacts; openedAt: string; closedAt: string | null; reasonCode: string | null };
+/** Tur 79: `alarmLines` — satırlardan hangilerinin koruma alarmı olduğu (dizin). Uyarı kartı bu satırları DİZİNLE alır; eskiden Türkçe cümle deseniyle ayıklanıyordu (dil değişince kırılırdı). */
+export type PositionView = { id: number; symbol: string; open: boolean; level: Level; alarm: "PROTECTION_LOST" | "PROTECTION_UNVERIFIABLE" | null; title: string; lines: string[]; alarmLines: number[]; facts: PositionFacts; openedAt: string; closedAt: string | null; reasonCode: string | null };
 /** Bir pozisyonun satırları. `quote`: son tikte ÖLÇÜLEN orta fiyat (yoksa açık pozisyonun anlık kâr/zararı BİLİNMİYOR olur, 0 yazılmaz). `audit`: son tikin borsa doğrulaması. */
-export function viewPosition(r: PositionRow, quote: { mid: string; at: number } | null, audit: { state: string; status: string | null; at: number } | null, now: number): PositionView {
-  const open = r.status === "OPEN", lines: string[] = [], qty = Number(r.qty), entry = Number(r.entry);
+export function viewPosition(r: PositionRow, quote: { mid: string; at: number } | null, audit: { state: string; status: string | null; at: number } | null, now: number, lang: string = RECORD_LANG): PositionView {
+  const open = r.status === "OPEN", lines: string[] = [], alarmLines: number[] = [], qty = Number(r.qty), entry = Number(r.entry), P = PL(lang).position;
   let level: Level = open ? "OK" : "INFO", alarm: "PROTECTION_LOST" | "PROTECTION_UNVERIFIABLE" | null = null;
-  lines.push(`${r.symbol} · ${n8(r.qty)} adet, giriş fiyatı ${n8(r.entry)} USDT, giriş büyüklüğü ${n2(qty * entry)} USDT. Açılış ${when(r.openedAt, now)}.`);
+  const alarmLine = (l: string) => { alarmLines.push(lines.length); lines.push(l); };
+  lines.push(fill(P.head, { symbol: r.symbol, qty: n8(r.qty), entry: n8(r.entry), notional: n2(qty * entry), opened: when(r.openedAt, now, lang) }));
   const peak = r.peak === null ? null : Number(r.peak);
-  lines.push(peak === null ? unknownText("Tepe fiyat", "fiyat giriş seviyesinin üstüne çıkmadığı için tepe hiç yazılmadı")
-    : `Tepe fiyat ${n8(r.peak as string)} USDT — giriş fiyatının %${(((peak - entry) / entry) * 100).toFixed(2)} üstünde. Koruma bu tepeye göre ${open ? "taşınır" : "taşınmıştı"}.`);
+  lines.push(peak === null ? unknownText(P.peakWhat, P.peakWhy, lang)
+    : fill(P.peak, { peak: n8(r.peak as string), pct: (((peak - entry) / entry) * 100).toFixed(2), moves: open ? P.movesOpen : P.movesClosed }));
   const gb = r.peak === null ? null : giveBackLevel(r.entry, r.peak);
-  lines.push(gb === null ? "Kâr geri verme çıkış seviyesi yok: tepe ölçülmediği için geri verilecek kâr da yok."
-    : open ? `Kâr geri verme çıkış seviyesi ${n8(gb)} USDT: fiyat buraya inerse pozisyon kapatılır ve tepedeki kârın yarısı korunmuş olur.`
-    : `Kâr geri verme çıkış seviyesi ${n8(gb)} USDT idi: pozisyon açıkken fiyat buraya inseydi kapatılacaktı.`);
+  lines.push(gb === null ? P.noGiveBack : fill(open ? P.giveBackOpen : P.giveBackClosed, { level: n8(gb) }));
   if (open) {
-    if (r.pid === null) { level = "ALARM"; alarm = "PROTECTION_LOST"; lines.push("KORUMA EMRİ KİMLİĞİ YOK: bu pozisyonun borsada zarar durdur emri kayıtlı değil. Motor bu durumda pozisyonu derhal kapatır."); }
-    else if (audit === null) lines.push(`Koruma emri ${r.pid} kayıtlı. ${unknownText("Emrin borsada durup durmadığı", "son turda borsa doğrulaması yapılmadı ya da kaydı okunamadı")}`);
-    else if (audit.state === "PROTECTED") lines.push(`Koruma emri ${r.pid} borsada duruyor — ${when(audit.at, now)} borsaya sorularak doğrulandı (emir durumu ${audit.status}). Altyapımız tamamen dursa bile bu emir borsada tetiklenir.`);
-    else if (audit.state === "FILLED") { level = "WARN"; lines.push(`Koruma emri ${r.pid} DOLDU: zarar durdur tetiklendi ve pozisyon borsada kapandı — ${when(audit.at, now)} borsaya sorularak görüldü. Kayıt bu yüzden kapanmış olarak işaretlendi.`); }
-    else if (audit.state === "UNVERIFIABLE") { level = "ALARM"; alarm = "PROTECTION_UNVERIFIABLE"; lines.push(`Koruma emri ${r.pid} DOĞRULANAMADI — ${when(audit.at, now)} borsaya soruldu ama sorgu düştü; emrin yerinde olup olmadığı BİLİNMİYOR. Yerinde olduğu VARSAYILMADI. Sayfanın en üstündeki uyarı ne yapıldığını söyler.`); }
-    else { level = "ALARM"; alarm = "PROTECTION_LOST"; lines.push(`KORUMA EMRİ ${r.pid} BORSADA BULUNAMADI — ${when(audit.at, now)} borsaya soruldu, emir yerinde değil. Sayfanın en üstündeki uyarı ne yapıldığını söyler.`); }
+    if (r.pid === null) { level = "ALARM"; alarm = "PROTECTION_LOST"; alarmLine(P.noProtectionId); }
+    else if (audit === null) lines.push(fill(P.auditNone, { pid: r.pid, unknown: unknownText(P.auditWhat, P.auditWhy, lang) }));
+    else if (audit.state === "PROTECTED") lines.push(fill(P.protected, { pid: r.pid, when: when(audit.at, now, lang), status: audit.status }));
+    else if (audit.state === "FILLED") { level = "WARN"; lines.push(fill(P.filled, { pid: r.pid, when: when(audit.at, now, lang) })); }
+    else if (audit.state === "UNVERIFIABLE") { level = "ALARM"; alarm = "PROTECTION_UNVERIFIABLE"; alarmLine(fill(P.unverifiable, { pid: r.pid, when: when(audit.at, now, lang) })); }
+    else { level = "ALARM"; alarm = "PROTECTION_LOST"; alarmLine(fill(P.gone, { pid: r.pid, when: when(audit.at, now, lang) })); }
     const g = quote === null ? null : String((Number(quote.mid) - entry) * qty);
-    lines.push(quote === null ? unknownText("Anlık kâr/zarar", "son turda bu çift için fiyat ölçülmedi") + ` Bu pozisyon için bugüne dek ödenen gerçek komisyon ${n8(r.fees)} USDT.` : `Son ölçülen fiyat ${n8(quote.mid)} USDT, ${when(quote.at, now)} okundu. ` + pnlLine(g, r.fees, "Bu pozisyon şu anda kapatılsaydı"));
+    lines.push(quote === null ? `${unknownText(P.pnlWhat, P.pnlWhy, lang)} ${fill(P.pnlFee, { fee: n8(r.fees) })}` : `${fill(P.lastPrice, { mid: n8(quote.mid), when: when(quote.at, now, lang) })} ${pnlLine(g, r.fees, P.ifClosedNow, lang)}`);
   } else {
-    if (r.closedAt !== null && r.closedAt.getTime() < r.openedAt.getTime()) { level = "WARN"; lines.push(`KAYIT KENDİSİYLE ÇELİŞİYOR: kapanış zamanı (${stamp(r.closedAt)}) açılış zamanından (${stamp(r.openedAt)}) ÖNCE görünüyor. Bu satırın süreleri güvenilmez; tutarlar kayıttan okunduğu gibi yazıldı, düzeltilmedi.`); }
-    lines.push(`Kapanış ${r.closedAt === null ? "zamanı bilinmiyor" : when(r.closedAt, now)} · kapanış sebebi: ${textOf(r.lastReason === null ? null : codeOf(r.lastReason))?.title ?? (r.status === "CLOSED" ? "koruma emri ya da çıkış kuralı pozisyonu kapattı; sicilde ayrı bir sebep kaydı yok" : "koruma yerleşmediği için pozisyon derhal kapatıldı")}.`);
-    lines.push(pnlLine(r.realized, r.fees, "Kapanmış pozisyonun sonucu"));
+    if (r.closedAt !== null && r.closedAt.getTime() < r.openedAt.getTime()) { level = "WARN"; lines.push(fill(P.contradiction, { closed: stamp(r.closedAt), opened: stamp(r.openedAt) })); }
+    lines.push(fill(P.closed, { when: r.closedAt === null ? P.closedTimeUnknown : when(r.closedAt, now, lang), reason: textOf(r.lastReason === null ? null : codeOf(r.lastReason), lang)?.title ?? (r.status === "CLOSED" ? P.reasonNoRecord : P.reasonImmediate) }));
+    lines.push(pnlLine(r.realized, r.fees, P.result, lang));
   }
   const grossUsdt = open ? (quote === null ? null : n8(String((Number(quote.mid) - entry) * qty))) : n8(r.realized);
   const facts: PositionFacts = { entryPrice: n8(r.entry), quantity: n8(r.qty), notionalUsdt: n2(qty * entry), peakPrice: r.peak === null ? null : n8(r.peak), giveBackLevel: gb === null ? null : n8(gb),
     protectionOrderId: r.pid, protectionState: audit?.state ?? null, protectionCheckedAt: audit === null ? null : new Date(audit.at).toISOString(), markPrice: quote === null ? null : n8(quote.mid),
     grossUsdt, feeUsdt: n8(r.fees), netUsdt: grossUsdt === null ? null : n8(String(Number(grossUsdt) - Number(r.fees))) };
-  return { id: r.id, symbol: r.symbol, open, level, alarm, title: `${r.symbol} — ${open ? "AÇIK" : "KAPANDI"}`, lines, facts, openedAt: new Date(r.openedAt).toISOString(), closedAt: r.closedAt === null ? null : new Date(r.closedAt).toISOString(), reasonCode: r.lastReason === null ? null : codeOf(r.lastReason) };
+  return { id: r.id, symbol: r.symbol, open, level, alarm, title: fill(open ? P.titleOpen : P.titleClosed, { symbol: r.symbol }), lines, alarmLines, facts, openedAt: new Date(r.openedAt).toISOString(), closedAt: r.closedAt === null ? null : new Date(r.closedAt).toISOString(), reasonCode: r.lastReason === null ? null : codeOf(r.lastReason) };
 }
 
 /** G32 (Tur 76): motorun hâli — panelin durum kartının TEK kaynağı; izin okumasının reddinden türetilir (PERMIT_EXPIRED ⇒ NO_PERMIT: ikisinde de izin yok). İstemci hâli başlık/cümleden tahmin ETMEZ. */
@@ -149,70 +145,70 @@ export type PanelSummary = { tick: { read: false } | { read: true; at: string | 
   health: { state: string; feesUsdt: string; period: string } | null };
 export type PanelView = { engineState: EngineState; riskCaps: RiskCaps; capital: CapitalView; at: string; engine: Card; tick: Card; health: Card; positions: { card: Card; rows: PositionView[] }; alerts: Card[]; sources: string[]; summary: PanelSummary };
 const card = (level: Level, title: string, lines: string[]): Card => ({ level, title, lines });
-/** PANELİN TAMAMI. Fırlatmaz: her okuma ayrı ayrı denenir, düşen okuma "bilinmiyor" olur (Ö-2) ve diğerleri yine gösterilir. */
-export async function readPanel(deps: PanelDeps = {}): Promise<PanelView> {
-  const now = (deps.now ?? Date.now)(), alerts: Card[] = [], sources: string[] = [];
-  const tryRead = async <T>(what: string, fn: () => Promise<T>): Promise<{ ok: true; v: T } | { ok: false; why: string }> => { try { return { ok: true, v: await fn() }; } catch (e) { return { ok: false, why: `${what} okunamadı (${(e as { name?: string })?.name ?? "error"})` }; } };
+/** PANELİN TAMAMI. Fırlatmaz: her okuma ayrı ayrı denenir, düşen okuma "bilinmiyor" olur (Ö-2) ve diğerleri yine gösterilir. `lang`: cümlelerin dili (uç isteğin dilini geçer; yoksa iç kayıt dili). */
+export async function readPanel(deps: PanelDeps = {}, lang: string = RECORD_LANG): Promise<PanelView> {
+  const now = (deps.now ?? Date.now)(), alerts: Card[] = [], sources: string[] = [], P = PL(lang), R = P.reads, PT = panelText(lang), PM = permitText(lang);
+  const tryRead = async <T>(what: string, fn: () => Promise<T>): Promise<{ ok: true; v: T } | { ok: false; why: string }> => { try { return { ok: true, v: await fn() }; } catch (e) { return { ok: false, why: fill(S(lang).common.readFailed, { what, name: (e as { name?: string })?.name ?? "error" }) }; } };
   const [permit, tick, rows, stop, health, caps, capital] = await Promise.all([
-    tryRead("çalışma izni kopyası", deps.permit ?? upstashPermitRead), tryRead("son tur kaydı", deps.tick ?? upstashLastTick),
-    tryRead("pozisyon kayıtları", deps.rows ?? prismaPositionRows()), tryRead("sicil", deps.stop ?? prismaLastStop()),
-    tryRead("sağlık göstergesi", deps.health ?? (() => readHealth(deps.healthDeps))),
-    tryRead("risk payları", deps.ceilings ?? prismaRiskCaps()), tryRead("son ölçülen sermaye", deps.capital ?? prismaLastCapital()),
+    tryRead(R.permit, deps.permit ?? upstashPermitRead), tryRead(R.tick, deps.tick ?? upstashLastTick),
+    tryRead(R.rows, deps.rows ?? prismaPositionRows()), tryRead(R.stop, deps.stop ?? prismaLastStop()),
+    tryRead(R.health, deps.health ?? (() => readHealth(deps.healthDeps, lang))),
+    tryRead(R.caps, deps.ceilings ?? prismaRiskCaps()), tryRead(R.capital, deps.capital ?? prismaLastCapital()),
   ]);
-  sources.push("Motor durumu ve son tur: hızlı depodaki kopyalar (salt okuma; tazeleme yapılmadı, kopyaların ömrü bu açılıştan etkilenmedi).", "Pozisyon, komisyon, kapanış sebebi ve sağlık: kalıcı kayıt (tek uyanış).", "Risk payları ve son ölçülen sermaye (komisyon defterinin dönem açılışı): kalıcı kayıt, aynı uyanış; borsaya bağlanılmadı.");
+  sources.push(...P.sources);
   // 1 — MOTOR: çalışıyor mu, çalışmıyorsa NEDEN (sebep sicilden, yüzeyden uydurulmaz)
-  const stopText = stop.ok && stop.v !== null ? textOf(codeOf(stop.v.reason)) : null;
+  const stopText = stop.ok && stop.v !== null ? textOf(codeOf(stop.v.reason), lang) : null;
   let engine: Card, running: boolean | null = null, engineState: EngineState = "UNKNOWN"; // null = izin okunamadı ⇒ motorun çalışıp çalışmadığı BİLİNMİYOR
-  if (!permit.ok) engine = card(PERMIT_TEXT.UNREADABLE.level, PERMIT_TEXT.UNREADABLE.title, [...say(PERMIT_TEXT.UNREADABLE), unknownText("Motorun çalışıp çalışmadığı", permit.why)]);
+  if (!permit.ok) engine = card(PM.UNREADABLE.level, PM.UNREADABLE.title, [...say(PM.UNREADABLE), unknownText(P.engine.unknownWhat, permit.why, lang)]);
   else {
     const d = permit.v, until = d?.permitUntil === null || d?.permitUntil === undefined ? 0 : Date.parse(d.permitUntil);
     const denial: PermitDenial | null = d === null ? "NO_PERMIT" : d.state === "STOPPED" ? "STOPPED" : until > now ? null : "PERMIT_EXPIRED";
     running = denial === null; engineState = denial === null ? "RUNNING" : denial === "STOPPED" ? "STOPPED" : "NO_PERMIT";
-    if (denial === null) engine = card("OK", "Motor çalışıyor", [`Motor çalışıyor: çalışma izni ${till(until, now)} dolacak ve dolmadan önce kalıcı kayıttan yenilenecek.`, `İzin ${when((d as ControlDoc).at, now)} verildi.`, "Yeni pozisyon açma, çıkış ve borsadaki korumanın denetimi çalışıyor."]);
-    else { const t = PERMIT_TEXT[denial]; engine = card(t.level, t.title, [...say(t), stopText === null ? "Sicilde bu durumu açıklayan bir kayıt bulunamadı." : `Sicildeki son kayıt: ${stopText.title} — ${stopText.what} (${when((stop.ok && stop.v ? stop.v.at : now), now)})`]); }
+    if (denial === null) engine = card("OK", P.engine.runningTitle, [fill(P.engine.running, { till: till(until, now, lang) }), fill(P.engine.granted, { when: when((d as ControlDoc).at, now, lang) }), P.engine.runningDoes]);
+    else { const t = PM[denial]; engine = card(t.level, t.title, [...say(t), stopText === null ? P.engine.noRecord : fill(P.engine.lastRecord, { title: stopText.title, what: stopText.what, when: when((stop.ok && stop.v ? stop.v.at : now), now, lang) })]); }
   // MOTOR kartı uyarı listesine KOPYALANMAZ: sayfa onu zaten en üstte gösterir; aynı üç cümleyi iki kez yazmak "kayıt kendisiyle çelişiyor mu" sorusunu doğuruyordu (İKİ GÖZ, Tur 26 madde 7).
   }
   // 2 — SON TUR: ne zaman atıldı, gecikme var mı (K-8), piyasa akışı açık mı
   let tickRec: TickRecord | null = null;
-  const tickLines: string[] = [];
-  if (!tick.ok) tickLines.push(unknownText("Motorun son turu", tick.why));
-  else if (tick.v === null) tickLines.push(unknownText("Motorun son turu", "hiç tur kaydı yok: motor bu kurulumda henüz hiç çalışmamış ya da kayıtların ömrü dolmuş"));
+  const tickLines: string[] = [], K = P.tick;
+  if (!tick.ok) tickLines.push(unknownText(K.what, tick.why, lang));
+  else if (tick.v === null) tickLines.push(unknownText(K.what, K.none, lang));
   else { tickRec = tick.v; const gap = now - tickRec.at, budget = tickRec.tickMs + CRON_PERIOD_MS;
-    tickLines.push(`Son tur ${when(tickRec.at, now)} atıldı ve ${tickRec.durationMs} milisaniye sürdü. Turlar ${dk(tickRec.tickMs)} aralıkla atılır.`);
+    tickLines.push(fill(K.line, { when: when(tickRec.at, now, lang), ms: tickRec.durationMs, interval: dk(tickRec.tickMs, lang) }));
     // Motor çalışmıyorken tur atılmaması BEKLENEN durumdur: gecikme hükmü yalnız çalışan motorda verilir, yoksa durdurma kendi kendine "gecikme" uyarısı doğururdu (kayıt kendisiyle çelişmez).
-    tickLines.push(running === false ? `Motor çalışmadığı için yeni tur atılmıyor; son tur ${dk(gap)} önce atılmıştı. Bu bir gecikme değil, durmanın beklenen sonucu.`
-      : running === null ? unknownText("Turun gecikip gecikmediği", "motorun çalışıp çalışmadığı okunamadı; çalışmayan motorda tur atılmaması beklenen durumdur")
-      : gap > budget ? `GECİKME VAR: son turun üstünden ${dk(gap)} geçti, beklenen en geç ${dk(budget)}. Bu boşlukta çıkış ve giriş değerlendirilmedi; borsadaki koruma emirleri yerindeydi.`
-      : `Gecikme yok: son turun üstünden ${dk(gap)} geçti, beklenen en geç ${dk(budget)}.`);
-    tickLines.push(tickRec.market === null ? unknownText("Piyasa fiyat akışı", "son turda fiyat okuması hiç yapılmadı (motor o turda iş yapmadı)") : tickRec.market.ok ? `Piyasa fiyat akışı açık: son turda ${(tickRec.market.quotes ?? []).length} çift için fiyat ölçüldü.` : say(PANEL_TEXT.MARKET_FEED_DOWN)[0]);
-    if (tickRec.market !== null && !tickRec.market.ok) alerts.push({ ...card(PANEL_TEXT.MARKET_FEED_DOWN.level, PANEL_TEXT.MARKET_FEED_DOWN.title, say(PANEL_TEXT.MARKET_FEED_DOWN)), code: "MARKET_FEED_DOWN" });
-    if (tickRec.late !== null && running !== false) alerts.push({ ...card(PANEL_TEXT.TICK_MISSED.level, PANEL_TEXT.TICK_MISSED.title, [...say(PANEL_TEXT.TICK_MISSED), `Ölçülen boşluk ${dk(tickRec.late.gapMs)}.`]), code: "TICK_MISSED" });
-    if (tickRec.copy?.quarantined) alerts.push({ ...card(PANEL_TEXT.POSITION_COPY_MISMATCH.level, PANEL_TEXT.POSITION_COPY_MISMATCH.title, say(PANEL_TEXT.POSITION_COPY_MISMATCH)), code: "POSITION_COPY_MISMATCH" });
-    if (tickRec.positionsSource === "unknown") alerts.push({ ...card(PANEL_TEXT.POSITIONS_UNKNOWN.level, PANEL_TEXT.POSITIONS_UNKNOWN.title, say(PANEL_TEXT.POSITIONS_UNKNOWN)), code: "POSITIONS_UNKNOWN" });
+    tickLines.push(running === false ? fill(K.stopped, { gap: dk(gap, lang) })
+      : running === null ? unknownText(K.lateWhat, K.lateWhy, lang)
+      : gap > budget ? fill(K.late, { gap: dk(gap, lang), budget: dk(budget, lang) })
+      : fill(K.notLate, { gap: dk(gap, lang), budget: dk(budget, lang) }));
+    tickLines.push(tickRec.market === null ? unknownText(K.feedWhat, K.feedWhy, lang) : tickRec.market.ok ? fill(K.feedOk, { n: (tickRec.market.quotes ?? []).length }) : say(PT.MARKET_FEED_DOWN)[0]);
+    if (tickRec.market !== null && !tickRec.market.ok) alerts.push({ ...card(PT.MARKET_FEED_DOWN.level, PT.MARKET_FEED_DOWN.title, say(PT.MARKET_FEED_DOWN)), code: "MARKET_FEED_DOWN" });
+    if (tickRec.late !== null && running !== false) alerts.push({ ...card(PT.TICK_MISSED.level, PT.TICK_MISSED.title, [...say(PT.TICK_MISSED), fill(K.gap, { gap: dk(tickRec.late.gapMs, lang) })]), code: "TICK_MISSED" });
+    if (tickRec.copy?.quarantined) alerts.push({ ...card(PT.POSITION_COPY_MISMATCH.level, PT.POSITION_COPY_MISMATCH.title, say(PT.POSITION_COPY_MISMATCH)), code: "POSITION_COPY_MISMATCH" });
+    if (tickRec.positionsSource === "unknown") alerts.push({ ...card(PT.POSITIONS_UNKNOWN.level, PT.POSITIONS_UNKNOWN.title, say(PT.POSITIONS_UNKNOWN)), code: "POSITIONS_UNKNOWN" });
   }
-  const tickCard = card(!tick.ok || tick.v === null ? "WARN" : running !== false && tickRec !== null && now - tickRec.at > tickRec.tickMs + CRON_PERIOD_MS ? "WARN" : "OK", "Son tur", tickLines);
+  const tickCard = card(!tick.ok || tick.v === null ? "WARN" : running !== false && tickRec !== null && now - tickRec.at > tickRec.tickMs + CRON_PERIOD_MS ? "WARN" : "OK", K.title, tickLines);
   // 3 — SAĞLIK (G17): oran, eşik, kalan pay — hepsi ölçülen defterden
-  let healthCard: Card;
-  if (!health.ok) healthCard = card("ALARM", PANEL_TEXT.HEALTH_UNKNOWN.title, [...say(PANEL_TEXT.HEALTH_UNKNOWN), unknownText("Komisyon/kâr oranı", health.why)]);
-  else { const v = health.v, t = v.state === "UNHEALTHY" ? PANEL_TEXT.HEALTH_PAUSED : v.state === "UNKNOWN" ? PANEL_TEXT.HEALTH_UNKNOWN : null;
+  let healthCard: Card; const H = P.health;
+  if (!health.ok) healthCard = card("ALARM", PT.HEALTH_UNKNOWN.title, [...say(PT.HEALTH_UNKNOWN), unknownText(H.ratioWhat, health.why, lang)]);
+  else { const v = health.v, t = v.state === "UNHEALTHY" ? PT.HEALTH_PAUSED : v.state === "UNKNOWN" ? PT.HEALTH_UNKNOWN : null;
     const pay = v.ratio === null || v.state === "UNKNOWN" ? null : Number(v.threshold) - Number(v.ratio);
-    healthCard = card(t === null ? "OK" : t.level, t === null ? "Sağlık göstergesi: strateji kendi ölçütünün içinde" : t.title, [
+    healthCard = card(t === null ? "OK" : t.level, t === null ? H.okTitle : t.title, [
       v.sentence,
-      v.state === "UNKNOWN" ? unknownText("Oranın eşiğe kalan payı", "oran hesaplanamadı") : pay === null ? `Bu dönemde henüz kapanmış kâr yok: oran hesaplanamıyor, bu yüzden hüküm verilmedi ve giriş açık. Şimdiye dek ödenen komisyon ${n2(v.fees)} USDT, hüküm için gereken en az komisyon ${n2(v.floor)} USDT.` : `Oran eşiğin ${pay >= 0 ? `${pay.toFixed(4)} kadar ALTINDA (kalan pay)` : `${Math.abs(pay).toFixed(4)} kadar ÜSTÜNDE (pay tükendi)`}.`,
+      v.state === "UNKNOWN" ? unknownText(H.marginWhat, H.marginWhy, lang) : pay === null ? fill(H.noProfit, { fees: n2(v.fees), floor: n2(v.floor) }) : fill(pay >= 0 ? H.below : H.above, { pay: Math.abs(pay).toFixed(4) }),
       ...(t === null ? [] : say(t))]);
     // SAĞLIK kartı da kopyalanmaz (aynı gerekçe); seviyesi zaten kartın kendisinde.
   }
   // 4 — POZİSYONLAR (P-2: her kâr/zarar satırı brüt · komisyon · net)
-  const quotes = (tickRec?.market?.ok ? tickRec.market.quotes : undefined) ?? [], quoteAt = tickRec?.market?.at ?? null;
+  const quotes = (tickRec?.market?.ok ? tickRec.market.quotes : undefined) ?? [], quoteAt = tickRec?.market?.at ?? null, O = P.positions;
   const auditOf = (id: number) => { const a = tickRec?.protection?.rows.find((x) => x.positionId === id); return a === undefined || tickRec === null ? null : { state: a.state, status: a.status, at: tickRec.at }; };
   let posCard: Card, views: PositionView[] = [];
-  if (!rows.ok) posCard = card("ALARM", "Pozisyonlar", [unknownText("Açık ve kapanmış pozisyonlar", rows.why)]);
-  else { views = rows.v.map((r) => { const q = quotes.find((x) => x.symbol === r.symbol); return viewPosition(r, q && quoteAt !== null ? { mid: q.mid, at: Date.parse(quoteAt) } : null, auditOf(r.id), now); });
+  if (!rows.ok) posCard = card("ALARM", O.title, [unknownText(O.what, rows.why, lang)]);
+  else { views = rows.v.map((r) => { const q = quotes.find((x) => x.symbol === r.symbol); return viewPosition(r, q && quoteAt !== null ? { mid: q.mid, at: Date.parse(quoteAt) } : null, auditOf(r.id), now, lang); });
     const openN = views.filter((v) => v.open).length, worst = views.reduce<Level>((a, v) => (RANK[v.level] > RANK[a] ? v.level : a), "OK");
     const tikKopyasiYok = tickRec?.positionsSource === "unknown";
-    posCard = card(worst, "Pozisyonlar", [openN === 0 ? "Şu anda açık pozisyon yok: motorun parası borsada nakit duruyor ve piyasa riski taşımıyor." : `${openN} açık pozisyon var; her birinin borsadaki koruma emri aşağıda ayrı ayrı yazılı.`,
-      ...(tikKopyasiYok ? ["Aşağıdaki satırlar KALICI KAYITTAN okundu ve doğrudur; motorun her turda kullandığı hızlı kopya okunamadığı için MOTOR son turda bu pozisyonlara dokunmadı (yukarıdaki uyarı). İkisi çelişmiyor: panel kayda, motor kopyaya bakar."] : []), views.length - openN === 0 ? "Kayıtta kapanmış pozisyon yok: bu hesapta henüz hiçbir pozisyon açılıp kapanmamış." : `Kayıtta ${views.length - openN} kapanmış pozisyon var, en yeniden eskiye (en çok 20 satır).`]);
-    for (const v of views.filter((x) => x.alarm !== null)) { const t = PANEL_TEXT[v.alarm as "PROTECTION_LOST" | "PROTECTION_UNVERIFIABLE"]; alerts.push({ ...card(t.level, `${t.title} — ${v.symbol}`, [...say(t), ...v.lines.filter((l) => /^KORUMA|^Koruma emri .* DOĞRULANAMADI/.test(l))]), code: v.alarm as string, symbol: v.symbol }); }
+    posCard = card(worst, O.title, [openN === 0 ? O.noOpen : fill(O.someOpen, { n: openN }),
+      ...(tikKopyasiYok ? [O.copyUnknown] : []), views.length - openN === 0 ? O.noClosed : fill(O.someClosed, { n: views.length - openN })]);
+    for (const v of views.filter((x) => x.alarm !== null)) { const t = PT[v.alarm as "PROTECTION_LOST" | "PROTECTION_UNVERIFIABLE"]; alerts.push({ ...card(t.level, `${t.title} — ${v.symbol}`, [...say(t), ...v.alarmLines.map((i) => v.lines[i])]), code: v.alarm as string, symbol: v.symbol }); }
   }
   alerts.sort((a, b) => RANK[b.level] - RANK[a.level]);
   const riskCaps: RiskCaps = caps.ok ? { ok: true, singlePct: caps.v.singlePct, totalPct: caps.v.totalPct } : { ok: false, why: caps.why };

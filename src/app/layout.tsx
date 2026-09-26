@@ -1,17 +1,24 @@
+// KÖK DÜZEN (Tur 79 · G34): sayfanın dili İSTEKTEN seçilir — seçim çerezi (yalnız dil kodu) → Accept-Language → EN — ve `<html lang dir>` ile istemci sağlayıcısına verilir:
+//   sunucuda işlenen ilk boyama doğru dilde gelir (yanlış dil yanıp sönmez), AR sağdan sola açılır. Dil çerezi erişim kararına girmez (kimlik/oturum bu dosyada okunmaz).
 import type { Metadata } from "next";
+import { cookies, headers } from "next/headers";
 import { SwRegister } from "./sw-register";
-import { EN } from "@/lib/i18n/en";
+import { AVAILABLE, LANG_COOKIE, dictFor, dirOf, pickLang } from "@/lib/i18n";
+import { LangProvider } from "@/lib/i18n/client";
 
-export const metadata: Metadata = {
-  title: "Winvestour",
-  description: EN.meta.description,
-};
+const requestLang = async () => { const c = await cookies(), h = await headers(); return pickLang(AVAILABLE, c.get(LANG_COOKIE)?.value, h.get("accept-language")); };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export async function generateMetadata(): Promise<Metadata> {
+  const T = dictFor(await requestLang());
+  return { title: "Winvestour", description: T.meta.description };
+}
+
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const lang = await requestLang();
   return (
-    <html lang={EN.lang}>
+    <html lang={lang} dir={dirOf(lang)}>
       <body style={{ margin: 0 }}>
-        {children}
+        <LangProvider lang={lang}>{children}</LangProvider>
         <SwRegister />
       </body>
     </html>

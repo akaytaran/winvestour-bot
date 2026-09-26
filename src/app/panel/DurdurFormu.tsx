@@ -6,9 +6,9 @@
 // ANAHTAR her seferinde elle yazılır, hiçbir yerde saklanmaz; alan maskeli ve gönderilirken boşaltılır. Onay penceresi YOK (durdurma koşulsuzdur).
 // Tur 77 (K-C): metnin TEK kaynağı sözlüktür (`@/lib/i18n` — panel ağacında DEĞİL, K-7 grafiği temiz); çevrimdışı cümlesi `S.panelOffline`.
 import { useState } from "react";
-import { dict, fill } from "@/lib/i18n";
+import { fill, section } from "@/lib/i18n";
 
-const S = dict().stop;
+const S = section("stop"), C = section("common"); // Tur 79: etkin dilin sözlüğü, erişim anında (Panel render başında useActivateLang)
 type Mode = "HOLD" | "CLOSE_ALL";
 type Outcome = { ok?: boolean; mode?: Mode; closeRequested?: boolean; flag?: { state?: string; at?: string }; persisted?: { neon?: boolean; upstash?: boolean }; event?: { ok?: boolean; id?: number }; retry?: { scheduled?: boolean; windowMs?: number } };
 export type DurdurSonucu = { ton: "OK" | "WARN" | "ALARM"; metin: string };
@@ -68,7 +68,7 @@ export function DurdurFormu({ bitti, vazgec }: { bitti: (s: DurdurSonucu, kabul:
       <p style={{ display: "flex", flexWrap: "wrap", gap: ".6rem", margin: ".7rem 0 0" }}>
         <button id="durdur-gonder" type="button" onClick={() => void send()} disabled={!etkin}
           style={{ fontSize: "1.1rem", fontWeight: 700, padding: ".8rem 1.4rem", minWidth: "12rem", minHeight: "2.75rem", borderRadius: 8, border: `1px solid ${etkin ? "#ff8a7a" : "#33333c"}`, background: etkin ? "#ff8a7a" : "#1a1a20", color: etkin ? "#1a0505" : "#e8e8ea", cursor: etkin ? "pointer" : "not-allowed" }}>{gonderiliyor ? S.sendingPanel : S.sendPanel}</button>
-        <button type="button" onClick={() => { setDurdurAnahtar(""); setMode(null); vazgec(); }} style={{ minHeight: "2.75rem", padding: ".45rem .9rem", borderRadius: 6, border: "1px solid #33333c", background: "#141419", color: "#e8e8ea", cursor: "pointer" }}>{dict().common.cancel}</button>
+        <button type="button" onClick={() => { setDurdurAnahtar(""); setMode(null); vazgec(); }} style={{ minHeight: "2.75rem", padding: ".45rem .9rem", borderRadius: 6, border: "1px solid #33333c", background: "#141419", color: "#e8e8ea", cursor: "pointer" }}>{C.cancel}</button>
       </p>
     </div>
   );

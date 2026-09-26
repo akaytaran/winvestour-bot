@@ -1,7 +1,7 @@
-// TEK İNGİLİZCE SÖZLÜK (Tur 77 · K-C · G32 parça 2/2 · karar defteri 25 Eyl "panel, /durdur ve API iletileri 7 dilde, varsayılan İngilizce; Tur 77'nin sade dil metni kaynak alınır").
+// ANA (İNGİLİZCE) SÖZLÜK — diğer diller (tr.ts, ar.ts …) AYNI şekli doldurur (Tur 79 · G34) · (Tur 77 · K-C · G32 parça 2/2 · karar defteri 25 Eyl "panel, /durdur ve API iletileri 7 dilde, varsayılan İngilizce; Tur 77'nin sade dil metni kaynak alınır").
 // Panelin, durdurma ekranının ve API not/ayrıntı iletilerinin KULLANICIYA GÖRÜNEN her metni burada durur; bileşen metni anahtar yoluyla (T.bolum.anahtar) alır. Tur 78 aynı şekli
 // (`Dict`) 6 dil için doldurur. Yer tutucu `{ad}` (index.ts `fill`). SADE DİL KURALI: `technical` dışındaki bölümler ANA GÖRÜNÜMDÜR — iç terim, tablo adı, ham alan adı, kural kodu
-// (K-7, S-8 …) YAZILMAZ (gate:i18n ölçer). Sunucunun kurduğu cümleler (bugün Türkçe: kartlar, tavan/tik/risk/anahtar cümleleri) bu dosyada DEĞİL; ekranda "Technical details" altında durur.
+// (K-7, S-8 …) YAZILMAZ (gate:i18n ölçer). Tur 79 (G34 · S5): sunucunun kurduğu cümleler (kartlar, tavan/tik/risk/anahtar cümleleri) AYRI sunucu sözlüğündedir (src/lib/i18n/srv/<dil>.ts); ekranda "Technical details" altında durur.
 // Onaylı uyarı metninin İngilizce hâli (scripts/lib/disclaimer.mjs, 20 Eyl onayı) AYNEN `entry.consent`te durur; bir kelime saparsa gate:ui KIRMIZI.
 import type { StopReasonCode } from "@/lib/events/stop-reasons";
 
@@ -11,12 +11,27 @@ type ReasonNames = Partial<Record<StopReasonCode, string>> & { other: string; no
 export const EN = {
   lang: "en",
   meta: { description: "Winvestour self-hosted crypto trading engine" },
-  units: { usdt: "USDT", perMonth: "/ month", second: "second", seconds: "seconds", minute: "minute", minutes: "minutes", hour: "hour", hours: "hours", every: "every", utc: "UTC", ago: "ago" },
+  // Tur 79: birimler çoğul KALIPLARIDIR (Intl.PluralRules kategorileri: zero · one · two · few · many · other; her kalıp {n} taşır) — RU/AR'nin çoğul biçimleri İngilizcenin iki biçimine sığmaz.
+  //   Sözcük sırası da kalıpta (every/ago/usdMonth): "every {d}" ↔ tr "{d}da bir" ↔ ar "كل {d}". EN çıktısı Tur 77'dekiyle AYNI (gate:i18n (4)).
+  units: {
+    usdt: "USDT", utc: "UTC", usdMonth: "{usd} / month", every: "every {d}", ago: "{d} ago", hoursDecimal: "{n} hours",
+    second: { zero: "{n} seconds", one: "{n} second", two: "{n} seconds", few: "{n} seconds", many: "{n} seconds", other: "{n} seconds" },
+    minute: { zero: "{n} minutes", one: "{n} minute", two: "{n} minutes", few: "{n} minutes", many: "{n} minutes", other: "{n} minutes" },
+    hour: { zero: "{n} hours", one: "{n} hour", two: "{n} hours", few: "{n} hours", many: "{n} hours", other: "{n} hours" },
+  },
+  // Tur 79 (G34): dil seçici (panelin üst çubuğu, giriş/kilit ekranı, /durdur). Dil ADLARI sözlükte değil, src/lib/i18n/langs.ts'te KENDİ dillerinde durur.
+  langSelect: { label: "Language", current: "Language: {name}", hint: "Choose the language of this screen. Only the language code is remembered in this browser." },
+  // Tur 79: kök sayfa (/) — bugüne dek sözlük dışında iki Türkçe cümleydi.
+  home: {
+    title: "Winvestour",
+    intro: "The engine status, open and closed positions, the health check and the decision engine's cost are on the panel. The panel needs a session.", panelLink: "Open the panel",
+    stopIntro: "To stop the engine there is a stop screen: it needs no session and no code, only the stop key.", stopLink: "Open the stop screen",
+  },
   common: {
     on: "ON", off: "OFF", unknown: "unknown", choose: "— choose —", cancel: "Cancel", notSet: "not set", notSetUpper: "NOT SET",
     codeLabel: "One-time code (6 digits) — from your authenticator app",
     technicalDetails: "Technical details",
-    technicalDetailsNote: "The lines below are the server's own full sentences for this section (today in Turkish; translated in a later release). They are kept here unchanged so that nothing measured is lost.",
+    technicalDetailsNote: "The lines below are the server's own full sentences for this section, with the raw names and numbers it measured. They are kept here so that nothing measured is lost.",
     serverSaid: "Reason given by the server: {why}.",
     serverSaidNone: "the server gave no reason",
     unreachable: "Could not reach the server: whether anything changed is UNKNOWN. Read the values again.",
@@ -64,6 +79,7 @@ export const EN = {
       ENROLL_FAILED: "This device could not be registered for the lock (cancelled, or the authenticator refused). The panel content is not shown.",
     },
     checking: "Reading the lock setting; the panel content is not shown until it is read.",
+    reading: "Reading the lock setting… Its current value and the change form appear once it has been read.",
     unlock: "Unlock", enroll: "Register this device for the lock", enrolled: "This device is registered for the lock. Now press \"Unlock\" to verify.",
     heading: "Biometric lock", onLockScreen: "lock screen",
     summaryUnreadable: "Biometric lock: the setting could not be read.",
@@ -96,7 +112,7 @@ export const EN = {
     heading: "Entry switch",
     what: "What it does: allows or blocks the engine opening NEW positions on its own decision (entry orders). When it is OFF the engine keeps running, exits and protection continue, but no new position is opened. Both directions need the one-time code.",
     unreadable: "Entry switch: the setting could NOT be read — whether it is on or off is UNKNOWN. An unreadable setting does not open entries: the engine sends no entry order. Exits, protection and stopping are not affected.",
-    on: "Entry switch: ON — the engine may send an entry order on its own decision when it finds a suitable opportunity. An order also needs the Binance key, capital, risk settings and the engine's run permit.",
+    on: "Entry switch: ON — the engine may send an entry order on its own decision when it finds a suitable opportunity. An order also needs the Binance key, capital, risk settings and a running engine.",
     off: "Entry switch: OFF — the engine sends no entry order. Exits and protection of open positions are not affected.",
     independent: "Stopping does not depend on this switch at all.",
     updated: "Last changed: {at}.", updatedUnknown: "When this setting last changed could not be read.",
@@ -114,7 +130,7 @@ export const EN = {
     consentLabel: "I have read it and accept the risk.",
     codeAria: "One-time code for the entry switch",
     apply: "Change the entry switch",
-    applied: "Entry switch changed: {changes}. It takes effect at once. Even when it is ON, an order also needs the Binance key, capital, risk settings and the engine's run permit. Protection, exits and stopping are not affected.",
+    applied: "Entry switch changed: {changes}. It takes effect at once. Even when it is ON, an order also needs the Binance key, capital, risk settings and a running engine. Protection, exits and stopping are not affected.",
     rejected403: "Not applied: the one-time code could not be verified. The entry switch allows orders with real money, so it cannot be changed without a code. Nothing was written.",
   },
   key: {
@@ -150,23 +166,23 @@ export const EN = {
   engine: {
     label: "ENGINE STATUS",
     state: {
-      RUNNING: { name: "Running", text: "The engine's run permit is valid: it runs on schedule and checks exits and the protection on the exchange. Whether it opens new positions depends on the entry switch and the checklist below." },
+      RUNNING: { name: "Running", text: "The engine is allowed to run and renews that permission on its own: it runs on schedule and checks exits and the protection on the exchange. Whether it opens new positions depends on the entry switch and the checklist below." },
       STOPPED: { name: "Stopped", text: "The engine was stopped: it does not run and opens no new position. Protective orders on the exchange stay in place. The recorded reason is under the History tab." },
-      NO_PERMIT: { name: "Not running", text: "The engine has no run permit (never started, or the permit ran out): it does not run. Starting it needs the one-time code." },
-      UNKNOWN: { name: "Unknown", text: "The engine's run permit could not be read this time: whether it runs is UNKNOWN and it is not treated as running. Stopping is always possible; starting is not offered until the status can be read." },
+      NO_PERMIT: { name: "Not running", text: "The engine is not allowed to run (it was never started, or its time-limited permission to run ran out): it does not run. Starting it needs the one-time code." },
+      UNKNOWN: { name: "Unknown", text: "Whether the engine is allowed to run could not be read this time: whether it runs is UNKNOWN and it is not treated as running. Stopping is always possible; starting is not offered until the status can be read." },
     },
     start: "START", startEngine: "Start the engine", starting: "Starting…", stop: "STOP",
     codeLabel: "One-time code (6 digits) — the code from your authenticator app",
     blockedTitle: "The START button appears when these are done. Do these first:",
     stopPageLink: "Stop page",
     stopPageText: "— works independently of this panel: it needs no session and no code, only the stop key.",
-    started: "Start accepted: the run permit was granted until {until}, and the engine renews it on its own schedule. The status above was read again from the server.",
+    started: "Start accepted: the engine may run until {until} and renews that on its own schedule. The status above was read again from the server.",
     startedUntilUnknown: "the time the server reported",
     notStartedTick: "The engine did not start: no tick interval is chosen. Choose one in Settings → \"Tick interval\", then start again. Nothing was changed.",
     notStartedCode: "The engine did not start: the one-time code could not be verified. Starting the engine opens the path to trading with real money, so it cannot be done without a code. Nothing was changed.",
     notStartedSession: "The engine did not start: your session has ended. Reload the page and sign in again. Nothing was changed.",
     notStartedLocked: "The engine did not start: too many wrong attempts, sensitive actions are locked for a while. Nothing was changed.",
-    notStartedStore: "The engine did not start: the run permit could not be written to both records, or the access store did not answer. A half permit is never given; nothing was changed. Try again a little later.",
+    notStartedStore: "The engine did not start: the permission to run could not be written to both records, or the access store did not answer. A half-written permission is never used; nothing was changed. Try again a little later.",
     startUnreachable: "Could not reach the server: whether the engine started is UNKNOWN. The status above was read again; try again when you are online.",
     startUnexpected: "The server's answer could not be understood: whether the engine started is UNKNOWN. The status above was read again.",
     beforeYouStart: "Before you start",
@@ -224,7 +240,7 @@ export const EN = {
     neon: "Permanent record (Neon database): {state}.", upstash: "Fast record (Upstash): {state}.",
     written: "written", neonUnconfirmed: "not confirmed as written within the response time",
     upstashWritten: "written — the engine will not run on its next turn",
-    upstashUnconfirmed: "not confirmed as written within the response time — until it is written, the engine may keep running until its next permit renewal",
+    upstashUnconfirmed: "not confirmed as written within the response time — until it is written, the engine may keep running until it next renews its permission to run",
     eventOk: "Event record written: record number {id}.", eventFailed: "The event record could NOT be written; the stop is still valid.",
     retry: "For the record that could not be confirmed, the server keeps retrying for {minutes} minutes.",
     panelAccepted: "Stop accepted. The engine's new status: {state}.",
@@ -284,7 +300,7 @@ export const EN = {
     what: "What it does: chooses how many minutes apart the engine runs (looks at prices, positions and protection). The engine cannot be started without a chosen interval. A less frequent interval needs no code; a more frequent one does.",
     unreadable: "The tick interval could not be read this time, so no value is shown and the change form is hidden. An unreadable interval is not treated as empty; the engine itself reads the interval and does not run if it cannot.",
     current: "The engine runs {every}.", empty: "No tick interval is chosen yet: the engine cannot be started.",
-    effect: "A change does not apply at the very next run: the running engine picks it up at its next permit renewal, or when it is started again (the exact time is under Technical details).",
+    effect: "A change does not apply at the very next run: the running engine picks it up the next time it renews its permission to run, or when it is started again (the exact time is under Technical details).",
     change: "Change (less frequent needs no code; more frequent needs a code)",
     choicesAria: "New tick interval",
     currentMark: "{label} (current)",
@@ -434,7 +450,7 @@ export const EN = {
     other: "a recorded engine event (full text in the Technical tab)", none: "no separate reason recorded",
   }) satisfies ReasonNames,
   technical: {
-    intro: "Everything below is the full, measured detail the panel reads. The engine, run and health cards and the position lines are the server's own sentences (today in Turkish).",
+    intro: "Everything below is the full, measured detail the panel reads. The engine, run and health cards and the position lines are the server's own sentences.",
     engineHeading: "Engine", positionsHeading: "Positions", alertsHeading: "Warnings (full text)",
     sourcesHeading: "Where the numbers on this page come from",
     filledAt: "The page was filled at {at}. It does not refresh by itself: press the button below to read the records again.",
@@ -443,6 +459,8 @@ export const EN = {
     levels: { ALARM: "URGENT", WARN: "ATTENTION", INFO: "INFO", OK: "NORMAL" },
     sharesStorage: "Stored in risk_profile (row id 1): max_single_position_pct and max_total_exposure_pct, percent of the free quote (USDT) balance. Each save writes the new values AND a change record (risk_setting_changes: who, when, before → after) in ONE database transaction — if the record cannot be written, the values do not change. Read with GET /api/risk/shares; written with POST /api/risk/shares, which needs a session and a new one-time code for EVERY save. The engine reads both values again at every entry decision (sizing + exposure check).",
     sharesChange: "{at} · {by} · {changes}",
+    // Tur 79: sunucunun kaynak KODLARI (sözleşme değeri, sunucu Türkçe kod gönderir) — Technical details'te sade adıyla.
+    capFrom: { ayar: "set in the settings", türetildi: "derived", sınırsız: "no limit" },
   },
   api: {
     brainPriceStale: "PRICE IS OLD — read on {readAt}, before this period; it should be checked (source: {source})",
@@ -451,7 +469,7 @@ export const EN = {
     brainApplied: "the change takes effect AT ONCE: the engine reads the setting at every planning run; no redeploy is needed",
     brainTightened: "setting changed (a direction that lowers spending, no code asked); it takes effect at once and was written to the change log",
     deviceRegistered: "this device will receive notifications; the app refreshes the registration at every opening",
-    entryApplied: "entry switch changed; it takes effect AT ONCE (no redeploy needed). Even when it is ON, an order also needs the Binance key, capital, risk settings and the engine's run permit. Protection, exits and stopping are NOT affected by this setting.",
+    entryApplied: "entry switch changed; it takes effect AT ONCE (no redeploy needed). Even when it is ON, an order also needs the Binance key, capital, risk settings and a running engine. Protection, exits and stopping are NOT affected by this setting.",
     lockApplied: "lock setting changed; it takes effect AT ONCE (no redeploy needed). This setting does not start or stop the engine and sends no order; the stop screen does not depend on this lock.",
     riskFuturesAllowed: "the setting allows futures; the futures ORDER PATH is not written yet — no order is sent anyway",
     riskLeverageCapHint: "a positive whole number or empty (empty = not set ⇒ futures closed); there is NO upper limit in the code — the number is the owner's decision",

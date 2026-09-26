@@ -219,7 +219,7 @@ Sonuç: her satır kendi işleminde eski anahtarla çözülüp yeni anahtarla sa
 <!-- readme:first-use -->
 ## İlk kullanım
 
-Panel ve durdurma ekranı **İngilizce** (başka diller planlanıyor). Aşağıdaki her şey yazılımın bugün tam olarak ne yaptığını anlatır; burada planlanan ya da vaat edilen bir şey yok. Panelin dört sekmesi var — **Status · Settings · History · Technical** — ve **Status** ile açılır. Ekran ve düğme adları aşağıda ekranda göründüğü gibi (İngilizce) yazıldı.
+Panel ve durdurma ekranı **İngilizce, Türkçe ve Arapça** (Arapça sağdan sola); dili panelin üstündeki, giriş ekranındaki ya da durdurma ekranındaki **Dil** menüsünden seç — seçmezsen tarayıcının dilinde, o da yoksa İngilizce açılır (Almanca, Rusça, İtalyanca ve Fransızca planlanıyor). Aşağıdaki her şey yazılımın bugün tam olarak ne yaptığını anlatır; burada planlanan ya da vaat edilen bir şey yok. Panelin dört sekmesi var — **Status · Settings · History · Technical** — ve **Status** ile açılır. Ekran ve düğme adları aşağıda ekranda göründüğü gibi (İngilizce) yazıldı.
 
 **Ayarlar:** paneldeki her ayar — ne işe yaradığı, varsayılanı, tek kullanımlık kod isteyip istemediği, ne zaman etkili olduğu — wiki'deki [Settings guide](https://github.com/akaytaran/winvestour-bot/wiki/Settings-guide) sayfasında (İngilizce) anlatılır; ekranlar [Panel guide](https://github.com/akaytaran/winvestour-bot/wiki/Panel-guide) sayfasında görünür.
 
@@ -253,7 +253,7 @@ Motor çalışırken kartta kırmızı **STOP** düğmesi görünür: **Stop onl
 
 ### 7. History ve Technical
 
-**History** son pozisyonları (giriş, büyüklük, komisyon, brüt ve net) ve her ayar değişikliğini (kim, ne zaman, eski → yeni) listeler. **Technical** panelin okuduğu ölçülmüş ayrıntının tamamını saklar — motor, tur ve sağlık kartları, pozisyon satırları ve her sayının nereden geldiği; bu sunucu cümlelerinin bir kısmı sonraki bir sürüme kadar hâlâ Türkçedir.
+**History** son pozisyonları (giriş, büyüklük, komisyon, brüt ve net) ve her ayar değişikliğini (kim, ne zaman, eski → yeni) listeler. **Technical** panelin okuduğu ölçülmüş ayrıntının tamamını saklar — motor, tur ve sağlık kartları, pozisyon satırları ve her sayının nereden geldiği; bu sunucu cümleleri de panelin dilinde gelir.
 
 ### 8. Bu sürümde olmayanlar
 

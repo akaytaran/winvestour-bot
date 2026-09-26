@@ -217,7 +217,7 @@ Result: each row is decrypted with the old key and re-wrapped with the new one i
 <!-- readme:first-use -->
 ## First use
 
-The panel and the stop screen are in **English** (more languages are planned). Everything below describes exactly what the software does today; nothing here is planned or promised. The panel has four tabs — **Status · Settings · History · Technical** — and opens on **Status**. Screen and button names are written below exactly as they appear.
+The panel and the stop screen are available in **English, Turkish and Arabic** (Arabic right-to-left); pick the language from the **Language** menu at the top of the panel, on the sign-in screen or on the stop screen — without a choice they open in your browser's language, otherwise in English (German, Russian, Italian and French are planned). Everything below describes exactly what the software does today; nothing here is planned or promised. The panel has four tabs — **Status · Settings · History · Technical** — and opens on **Status**. Screen and button names are written below exactly as they appear.
 
 **Settings:** every panel setting — what it does, its default, whether it needs the one-time code, when it takes effect — is described in the wiki's [Settings guide](https://github.com/akaytaran/winvestour-bot/wiki/Settings-guide); the screens are shown in the [Panel guide](https://github.com/akaytaran/winvestour-bot/wiki/Panel-guide).
 
@@ -251,7 +251,7 @@ While the engine runs, the card shows a red **STOP** button: choose **Stop only*
 
 ### 7. History and Technical
 
-**History** lists recent positions (entry, size, commission, gross and net) and every setting change (who, when, old → new). **Technical** keeps the full measured detail the panel reads — engine, run and health cards, position lines and where each number comes from; some of these server sentences are still in Turkish until a later release.
+**History** lists recent positions (entry, size, commission, gross and net) and every setting change (who, when, old → new). **Technical** keeps the full measured detail the panel reads — engine, run and health cards, position lines and where each number comes from; these server sentences follow the panel's language too.
 
 ### 8. What this release does not have
 

@@ -219,7 +219,7 @@ Résultat : chaque ligne est déchiffrée avec l'ancienne clé et ré-enveloppé
 <!-- readme:first-use -->
 ## Première utilisation
 
-Le panneau et l'écran d'arrêt sont en **anglais** (d'autres langues sont prévues). Tout ce qui suit décrit exactement ce que le logiciel fait aujourd'hui ; rien ici n'est prévu ni promis. Le panneau a quatre onglets — **Status · Settings · History · Technical** — et s'ouvre sur **Status**. Les noms des écrans et des boutons sont écrits ci-dessous tels qu'ils apparaissent (en anglais).
+Le panneau et l'écran d'arrêt sont disponibles en **anglais, turc et arabe** (l'arabe de droite à gauche) ; choisis la langue dans le menu **Language** en haut du panneau, sur l'écran de connexion ou sur l'écran d'arrêt — sans choix, ils s'ouvrent dans la langue de ton navigateur, sinon en anglais (l'allemand, le russe, l'italien et le français sont prévus). Tout ce qui suit décrit exactement ce que le logiciel fait aujourd'hui ; rien ici n'est prévu ni promis. Le panneau a quatre onglets — **Status · Settings · History · Technical** — et s'ouvre sur **Status**. Les noms des écrans et des boutons sont écrits ci-dessous tels qu'ils apparaissent (en anglais).
 
 **Réglages :** chaque réglage du panneau — ce qu'il fait, sa valeur par défaut, s'il demande le code à usage unique, quand il prend effet — est décrit dans la page [Settings guide](https://github.com/akaytaran/winvestour-bot/wiki/Settings-guide) du wiki (en anglais) ; les écrans sont montrés dans le [Panel guide](https://github.com/akaytaran/winvestour-bot/wiki/Panel-guide).
 
@@ -253,7 +253,7 @@ Pendant que le moteur tourne, la carte affiche un bouton rouge **STOP** : choisi
 
 ### 7. History et Technical
 
-**History** liste les positions récentes (entrée, taille, commission, brut et net) et chaque changement de réglage (qui, quand, ancien → nouveau). **Technical** conserve tout le détail mesuré que le panneau lit — cartes du moteur, du passage et de la santé, lignes de positions et provenance de chaque chiffre ; certaines de ces phrases du serveur sont encore en turc jusqu'à une version ultérieure.
+**History** liste les positions récentes (entrée, taille, commission, brut et net) et chaque changement de réglage (qui, quand, ancien → nouveau). **Technical** conserve tout le détail mesuré que le panneau lit — cartes du moteur, du passage et de la santé, lignes de positions et provenance de chaque chiffre ; ces phrases du serveur suivent aussi la langue du panneau.
 
 ### 8. Ce que cette version n'a pas
 

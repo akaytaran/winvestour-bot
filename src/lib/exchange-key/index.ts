@@ -12,6 +12,9 @@ import { RECV_WINDOW_MS, signedTimestamp, type ClockDeps } from "@/lib/binance/t
 import { encryptField, keyringFromEnv, type Keyring, type StoredField } from "@/lib/crypto";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { inspectPrivateKey, withSignedCall } from "./sign";
+import { fill } from "@/lib/i18n";
+import { srvFor, RECORD_LANG } from "@/lib/i18n/srv";
+// TUR 79 (G34 · S5): cümleler SUNUCU SÖZLÜĞÜNDEN (src/lib/i18n/srv · key). Dil verilmezse İÇ KAYIT DİLİ (tr); uç isteğin dilini geçer. Alanlar, kodlar ve durum kodları dilden bağımsızdır.
 
 /** Yetki denetimi çağrısı. Ağırlık 1 (IP): Binance belgesi "Weight(IP): 1"; sapi ağırlığı ayrı sayaçtır (X-SAPI-USED-IP-WEIGHT-1M) — B2'de başlıktan ölçülecek. */
 export const RESTRICTIONS_CALL = { path: "/sapi/v1/account/apiRestrictions", cls: "DISCOVERY", weight: 1 } as const;
@@ -108,24 +111,24 @@ export function keyIdleStatus(row: { lastOrderAt: Date | null; verifiedAt: Date 
 export type KeyStatus = { ok: true; present: false; lines: string[] } | { ok: true; present: true; lines: string[]; label: string; spot: boolean; futures: boolean; reading: boolean; ipRestrict: boolean;
   verifiedAt: string; lastOrderAt: string | null; idle: { idleDays: number; state: "ok" | "warn" | "expired"; deleteAt: string }; olderRows: number } | { ok: false; lines: string[] };
 const utc = (d: Date) => `${d.toISOString().replace("T", " ").slice(0, 19)} UTC`;
-const acik = (b: boolean) => (b ? "AÇIK" : "KAPALI");
-export async function readKeyStatus(client?: PrismaClient, now = Date.now()): Promise<KeyStatus> {
+export async function readKeyStatus(client?: PrismaClient, now = Date.now(), lang: string = RECORD_LANG): Promise<KeyStatus> {
+  const K = srvFor(lang).key, acik = (b: boolean) => (b ? K.on : K.off);
   let row: { label: string; ipRestrict: boolean; enableReading: boolean; enableSpotAndMarginTrading: boolean; enableFutures: boolean; enableWithdrawals: boolean; permitsUniversalTransfer: boolean; verifiedAt: Date; lastOrderAt: Date | null } | null, live: number;
   try {
     const db = client ?? getDb();
     row = await db.exchangeKey.findFirst({ where: { revokedAt: null }, orderBy: { id: "desc" }, select: { label: true, ipRestrict: true, enableReading: true, enableSpotAndMarginTrading: true, enableFutures: true, enableWithdrawals: true, permitsUniversalTransfer: true, verifiedAt: true, lastOrderAt: true } });
     live = await db.exchangeKey.count({ where: { revokedAt: null } });
-  } catch { return { ok: false, lines: ["Kayıtlı Binance anahtarının durumu bu açılışta OKUNAMADI — anahtar var mı yok mu BİLİNMİYOR. Okunamayan durum \"anahtar yok\" sayılmadı; motorun kendisi anahtarı ayrıca okur ve okuyamazsa borsaya imzalı çağrı yapmaz."] }; }
-  if (!row) return { ok: true, present: false, lines: ["Kayıtlı Binance anahtarı YOK — motor borsaya imzalı çağrı yapamaz ve emir gönderemez. Aşağıdaki formdan bir anahtar ekleyebilirsin."] };
+  } catch { return { ok: false, lines: [K.unreadable] }; }
+  if (!row) return { ok: true, present: false, lines: [K.absent] };
   const idle = keyIdleStatus(row, now), since = row.lastOrderAt ?? row.verifiedAt, olderRows = live - 1;
   const lines = [
-    `Kayıtlı Binance anahtarı VAR: "${row.label}". Son değişiklik: ${utc(row.verifiedAt)} — anahtar o an Binance'ten izinleri okunarak doğrulandı ve şifrelenerek kaydedildi. Anahtarın kendisi ve özel anahtar bu ekranda hiçbir zaman gösterilmez.`,
-    `İzinler (kayıt anında Binance'in bildirdiği): okuma ${acik(row.enableReading)} · spot işlem ${acik(row.enableSpotAndMarginTrading)} · futures ${acik(row.enableFutures)} · çekim ${acik(row.enableWithdrawals)} · evrensel transfer ${acik(row.permitsUniversalTransfer)} · IP kısıtı ${row.ipRestrict ? "VAR" : "YOK"}.${row.enableSpotAndMarginTrading ? "" : " Spot işlem izni KAPALI olduğu için motor bu anahtarla spot emir GÖNDEREMEZ."}`,
+    fill(K.present, { label: row.label, at: utc(row.verifiedAt) }),
+    [fill(K.perms, { read: acik(row.enableReading), spot: acik(row.enableSpotAndMarginTrading), futures: acik(row.enableFutures), withdraw: acik(row.enableWithdrawals), transfer: acik(row.permitsUniversalTransfer), ip: row.ipRestrict ? K.yes : K.no }), ...(row.enableSpotAndMarginTrading ? [] : [K.spotOff])].join(" "),
     row.ipRestrict
-      ? `Son emir: ${row.lastOrderAt ? utc(row.lastOrderAt) : "bu anahtarla henüz gerçek emir gönderilmedi"}. Binance'in 30 gün emirsiz kalan anahtarı silme kuralı IP kısıtı OLMAYAN anahtarlar için ölçüldü; IP kısıtlı anahtar için bu kural ölçülmedi.`
-      : `Son emir: ${row.lastOrderAt ? utc(row.lastOrderAt) : "bu anahtarla henüz gerçek emir gönderilmedi"}. IP kısıtı olmayan anahtarı Binance 30 gün emirsiz kalınca SİLİYOR (ölçüldü). Sayaç ${utc(since)} tarihinden işliyor: ${idle.idleDays} gün geçti, anahtar en erken ${utc(idle.deleteAt)} tarihinde silinebilir.${idle.state === "expired" ? " SÜRE DOLDU: anahtar Binance'te silinmiş olabilir; yeni bir anahtar eklemen gerekebilir." : idle.state === "warn" ? " SİLİNMEYE YAKLAŞIYOR: süre dolmadan yeni bir anahtar eklemen ya da motorun bir emir göndermesi gerekir." : ""} Yazılım anahtarı ayakta tutmak için anlamsız emir göndermez.`,
+      ? fill(K.lastOrderIp, { last: row.lastOrderAt ? utc(row.lastOrderAt) : K.noOrder })
+      : [fill(K.lastOrderNoIp, { last: row.lastOrderAt ? utc(row.lastOrderAt) : K.noOrder, since: utc(since), days: idle.idleDays, deleteAt: utc(idle.deleteAt) }), ...(idle.state === "expired" ? [K.expired] : idle.state === "warn" ? [K.warn] : []), K.noKeepAlive].join(" "),
   ];
-  if (olderRows > 0) lines.push(`Veritabanında bundan önce kaydedilmiş ${olderRows} eski anahtar kaydı daha duruyor; motor YALNIZ en yenisini kullanır. Bu ekran eski anahtarları Binance'te kapatmaz — kullanmadığın anahtarı Binance'te silmeyi unutma.`);
+  if (olderRows > 0) lines.push(fill(K.older, { n: olderRows }));
   return { ok: true, present: true, lines, label: row.label, spot: row.enableSpotAndMarginTrading, futures: row.enableFutures, reading: row.enableReading, ipRestrict: row.ipRestrict,
     verifiedAt: row.verifiedAt.toISOString(), lastOrderAt: row.lastOrderAt?.toISOString() ?? null, idle: { idleDays: idle.idleDays, state: idle.state, deleteAt: idle.deleteAt.toISOString() }, olderRows };
 }

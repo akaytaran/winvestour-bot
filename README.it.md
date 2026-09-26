@@ -219,7 +219,7 @@ Risultato: ogni riga viene decifrata con la vecchia chiave e riavvolta con la nu
 <!-- readme:first-use -->
 ## Primo utilizzo
 
-Il pannello e la schermata di arresto sono in **inglese** (altre lingue sono previste). Tutto quello che segue descrive esattamente ciò che il software fa oggi; niente qui è previsto o promesso. Il pannello ha quattro schede — **Status · Settings · History · Technical** — e si apre su **Status**. I nomi di schermate e pulsanti sono scritti sotto esattamente come appaiono (in inglese).
+Il pannello e la schermata di arresto sono disponibili in **inglese, turco e arabo** (l'arabo da destra a sinistra); scegli la lingua dal menu **Language** in alto nel pannello, nella schermata di accesso o nella schermata di arresto — senza una scelta si aprono nella lingua del tuo browser, altrimenti in inglese (tedesco, russo, italiano e francese sono previsti). Tutto quello che segue descrive esattamente ciò che il software fa oggi; niente qui è previsto o promesso. Il pannello ha quattro schede — **Status · Settings · History · Technical** — e si apre su **Status**. I nomi di schermate e pulsanti sono scritti sotto esattamente come appaiono (in inglese).
 
 **Impostazioni:** ogni impostazione del pannello — cosa fa, il suo valore predefinito, se richiede il codice monouso, quando ha effetto — è descritta nella pagina [Settings guide](https://github.com/akaytaran/winvestour-bot/wiki/Settings-guide) del wiki (in inglese); le schermate sono mostrate nella [Panel guide](https://github.com/akaytaran/winvestour-bot/wiki/Panel-guide).
 
@@ -253,7 +253,7 @@ Mentre il motore funziona, la scheda mostra un pulsante rosso **STOP**: scegli *
 
 ### 7. History e Technical
 
-**History** elenca le posizioni recenti (entrata, dimensione, commissione, lordo e netto) e ogni modifica delle impostazioni (chi, quando, vecchio → nuovo). **Technical** conserva tutto il dettaglio misurato che il pannello legge — schede di motore, giro e salute, righe delle posizioni e da dove viene ogni numero; alcune di queste frasi del server sono ancora in turco fino a una versione successiva.
+**History** elenca le posizioni recenti (entrata, dimensione, commissione, lordo e netto) e ogni modifica delle impostazioni (chi, quando, vecchio → nuovo). **Technical** conserva tutto il dettaglio misurato che il pannello legge — schede di motore, giro e salute, righe delle posizioni e da dove viene ogni numero; anche queste frasi del server seguono la lingua del pannello.
 
 ### 8. Cosa non c'è in questa versione
 

@@ -16,6 +16,11 @@ import { PERMIT_REFRESH_MS } from "@/lib/engine-control";
 // TUR 67: tik aralığının seçenek kümesi zincirde TÜRETİLİR (cron dönemi + tazeleme payı; gate:chain `setting-shape`). Zincir de bu modülü içe aktarır (Beyin ayarı) ⇒ DÖNGÜSEL içe aktarma:
 //   `TICK_CHOICES_MS` bu modülde YALNIZ fonksiyon gövdelerinde okunur (modül üst düzeyinde değil), yükleme sırası ne olursa olsun canlı bağ çözülmüş olur.
 import { TICK_CHOICES_MS } from "@/lib/chain";
+import { fill } from "@/lib/i18n";
+import { srvFor, RECORD_LANG } from "@/lib/i18n/srv";
+// TUR 79 (G34 · S5): cümleler SUNUCU SÖZLÜĞÜNDEN (src/lib/i18n/srv · brain). Dil verilmezse İÇ KAYIT DİLİ (tr): motorun planlama kaydı/olay metni bugünkü Türkçe cümledir; uç isteğin dilini geçer.
+//   Tip birliği olarak bildirilen değerler ("ayar" · "türetildi" · "boş" · "türetilemedi" · "sınırsız" · "yok" · "azalır" · "artar" · "aynı" · "bilinmiyor") cümle değil SÖZLEŞME KODUDUR (JSON değeri) — değişmez.
+const BS = (lang: string) => srvFor(lang).brain;
 
 const D = Prisma.Decimal;
 
@@ -66,7 +71,7 @@ export const brainShareOf = (r: BrainSettingsRow): BrainShare => r.monthlyCapUsd
  *  "Makul kat" DEĞİL, en dar tavan: kayıt yolu düşse bile günde bundan fazla çağrı yapılamaz — Tur 24 §3.2'nin 1 440 çağrı/gün açığı buradan kapanır. */
 export const derivedDailyCallCap = (intervalMs: number): number => Math.ceil(DAY_MS / intervalMs) + 1;
 /** TİK ARALIĞI — İNSAN BİRİMİ (Tur 67, U-3 · P-2): ham milisaniye ekrana çıkmaz. Dakikanın katı "N dakikada bir", değilse "N saniyede bir". Sayı üretmez, yalnız verilen sayıyı okunur yapar. */
-export const tickText = (ms: number): string => (ms % 60_000 === 0 ? `${ms / 60_000} dakikada bir` : `${ms / 1000} saniyede bir`);
+export const tickText = (ms: number, lang: string = RECORD_LANG): string => (ms % 60_000 === 0 ? fill(BS(lang).tickMinutes, { n: ms / 60_000 }) : fill(BS(lang).tickSeconds, { n: ms / 1000 }));
 
 // ---- AYAR ----
 export type BrainSettingsRow = { model: string; callIntervalMs: number; candidates: number; candleLimit: number; monthlyCapUsd: string | null; dailyCallCap: number | null; totalCapUsd: string | null; capEmptyBehavior: CapEmptyBehavior; infraUsd: string | null; tickMs: number | null };
@@ -107,77 +112,76 @@ export type SettingsPatch = Partial<BrainSettingsRow>;
 export type PatchOutcome = { ok: true; next: BrainSettingsRow; changes: SettingChange[] } | { ok: false; errors: string[] };
 const intIn = (v: unknown, lo: number, hi: number) => typeof v === "number" && Number.isInteger(v) && v >= lo && v <= hi;
 /** DOĞRULAMA (madde 1): model AÇIK LİSTEDEN; sıklık/aday/mum türetilmiş sınırlar içinde; tavanlar pozitif ya da NULL (NULL ⇒ türetilir). Geçmeyen yama bütünüyle REDDEDİLİR. */
-export function validatePatch(cur: BrainSettingsRow, patch: SettingsPatch): PatchOutcome {
-  const errors: string[] = [], next: BrainSettingsRow = { ...cur };
-  for (const k of Object.keys(patch) as (keyof BrainSettingsRow)[]) if (!(k in cur)) errors.push("bilinmeyen alan: " + String(k));
-  if (patch.model !== undefined) { if (typeof patch.model !== "string" || priceOf(patch.model) === null) errors.push(`model açık listede değil (fiyat tablosunda karşılığı yok): ${String(patch.model)} — izinli: ${ALLOWED_MODELS.join(", ")}`); else next.model = patch.model; }
-  if (patch.callIntervalMs !== undefined) { if (!intIn(patch.callIntervalMs, INTERVAL_BOUNDS.minMs, INTERVAL_BOUNDS.maxMs)) errors.push(`çağrı aralığı sınır dışı (${INTERVAL_BOUNDS.minMs}–${INTERVAL_BOUNDS.maxMs} ms): ${String(patch.callIntervalMs)}`); else next.callIntervalMs = patch.callIntervalMs; }
-  if (patch.candidates !== undefined) { if (!intIn(patch.candidates, CANDIDATE_BOUNDS.min, CANDIDATE_BOUNDS.max)) errors.push(`aday sayısı sınır dışı (${CANDIDATE_BOUNDS.min}–${CANDIDATE_BOUNDS.max}): ${String(patch.candidates)}`); else next.candidates = patch.candidates; }
-  if (patch.candleLimit !== undefined) { if (!intIn(patch.candleLimit, CANDLE_BOUNDS.min, CANDLE_BOUNDS.max)) errors.push(`mum sayısı sınır dışı (${CANDLE_BOUNDS.min}–${CANDLE_BOUNDS.max}): ${String(patch.candleLimit)}`); else next.candleLimit = patch.candleLimit; }
-  if (patch.monthlyCapUsd !== undefined) { const v = patch.monthlyCapUsd; if (v !== null && !(typeof v === "string" && /^\d{1,6}(\.\d{1,4})?$/.test(v) && new D(v).gt(0))) errors.push("aylık tavan pozitif ondalık dize ya da null olmalı: " + String(v)); else next.monthlyCapUsd = v; }
-  if (patch.dailyCallCap !== undefined) { const v = patch.dailyCallCap; if (v !== null && !intIn(v, 1, Number.MAX_SAFE_INTEGER)) errors.push("günlük çağrı tavanı pozitif tamsayı ya da null olmalı: " + String(v)); else next.dailyCallCap = v; }
-  if (patch.totalCapUsd !== undefined) { const v = patch.totalCapUsd; if (v !== null && !(typeof v === "string" && /^\d{1,6}(\.\d{1,4})?$/.test(v) && new D(v).gt(0))) errors.push("aylık toplam maliyet tavanı pozitif ondalık dize ($/ay) ya da null (girilmedi) olmalı: " + String(v)); else next.totalCapUsd = v; }
-  if (patch.infraUsd !== undefined) { const v = patch.infraUsd; if (v !== null && !(typeof v === "string" && /^\d{1,6}(\.\d{1,4})?$/.test(v))) errors.push("aylık altyapı maliyeti sıfır ya da pozitif ondalık dize ($/ay) ya da null (girilmedi) olmalı: " + String(v)); else next.infraUsd = v; }
+export function validatePatch(cur: BrainSettingsRow, patch: SettingsPatch, lang: string = RECORD_LANG): PatchOutcome {
+  const errors: string[] = [], next: BrainSettingsRow = { ...cur }, E = BS(lang).errors;
+  for (const k of Object.keys(patch) as (keyof BrainSettingsRow)[]) if (!(k in cur)) errors.push(fill(E.unknownField, { field: String(k) }));
+  if (patch.model !== undefined) { if (typeof patch.model !== "string" || priceOf(patch.model) === null) errors.push(fill(E.model, { value: String(patch.model), allowed: ALLOWED_MODELS.join(", ") })); else next.model = patch.model; }
+  if (patch.callIntervalMs !== undefined) { if (!intIn(patch.callIntervalMs, INTERVAL_BOUNDS.minMs, INTERVAL_BOUNDS.maxMs)) errors.push(fill(E.interval, { min: INTERVAL_BOUNDS.minMs, max: INTERVAL_BOUNDS.maxMs, value: String(patch.callIntervalMs) })); else next.callIntervalMs = patch.callIntervalMs; }
+  if (patch.candidates !== undefined) { if (!intIn(patch.candidates, CANDIDATE_BOUNDS.min, CANDIDATE_BOUNDS.max)) errors.push(fill(E.candidates, { min: CANDIDATE_BOUNDS.min, max: CANDIDATE_BOUNDS.max, value: String(patch.candidates) })); else next.candidates = patch.candidates; }
+  if (patch.candleLimit !== undefined) { if (!intIn(patch.candleLimit, CANDLE_BOUNDS.min, CANDLE_BOUNDS.max)) errors.push(fill(E.candles, { min: CANDLE_BOUNDS.min, max: CANDLE_BOUNDS.max, value: String(patch.candleLimit) })); else next.candleLimit = patch.candleLimit; }
+  if (patch.monthlyCapUsd !== undefined) { const v = patch.monthlyCapUsd; if (v !== null && !(typeof v === "string" && /^\d{1,6}(\.\d{1,4})?$/.test(v) && new D(v).gt(0))) errors.push(fill(E.monthlyCap, { value: String(v) })); else next.monthlyCapUsd = v; }
+  if (patch.dailyCallCap !== undefined) { const v = patch.dailyCallCap; if (v !== null && !intIn(v, 1, Number.MAX_SAFE_INTEGER)) errors.push(fill(E.dailyCap, { value: String(v) })); else next.dailyCallCap = v; }
+  if (patch.totalCapUsd !== undefined) { const v = patch.totalCapUsd; if (v !== null && !(typeof v === "string" && /^\d{1,6}(\.\d{1,4})?$/.test(v) && new D(v).gt(0))) errors.push(fill(E.totalCap, { value: String(v) })); else next.totalCapUsd = v; }
+  if (patch.infraUsd !== undefined) { const v = patch.infraUsd; if (v !== null && !(typeof v === "string" && /^\d{1,6}(\.\d{1,4})?$/.test(v))) errors.push(fill(E.infra, { value: String(v) })); else next.infraUsd = v; }
   // Tur 67 (K3): tik aralığı YALNIZ türetilmiş seçenek kümesinden (TICK_CHOICES_MS: cron döneminin katları, aralık + cron dönemi ≤ tazeleme payı). BOŞALTMAK reddedilir: NULL "girilmedi"dir ve
   //   motoru tiklemez hâle getirir — bu gizli bir durdurma olurdu; durdurmanın yolu durdurma ucudur (K-7). Kayıtlı NULL (boş kurulum) kendi kendine doğrulanırken hata sayılmaz.
-  if (patch.tickMs !== undefined) { const v = patch.tickMs; if (v === null) { if (cur.tickMs !== null && cur.tickMs !== undefined) errors.push("tik aralığı boşaltılamaz (boş aralık motoru tiklemez hâle getirir; motoru durdurmak için durdurma ucunu kullan)"); }
-    else if (typeof v !== "number" || !TICK_CHOICES_MS.includes(v)) errors.push(`tik aralığı seçenek kümesinde değil: ${String(v)} — izinli: ${TICK_CHOICES_MS.map(tickText).join(", ")}`); else next.tickMs = v; }
-  if (patch.capEmptyBehavior !== undefined) { if (!(CAP_EMPTY_BEHAVIORS as readonly string[]).includes(String(patch.capEmptyBehavior))) errors.push(`tavan boşken davranış açık listede değil: ${String(patch.capEmptyBehavior)} — izinli: ${CAP_EMPTY_BEHAVIORS.join(", ")}`); else next.capEmptyBehavior = patch.capEmptyBehavior; }
+  if (patch.tickMs !== undefined) { const v = patch.tickMs; if (v === null) { if (cur.tickMs !== null && cur.tickMs !== undefined) errors.push(E.tickClear); }
+    else if (typeof v !== "number" || !TICK_CHOICES_MS.includes(v)) errors.push(fill(E.tickChoice, { value: String(v), allowed: TICK_CHOICES_MS.map((ms) => tickText(ms, lang)).join(", ") })); else next.tickMs = v; }
+  if (patch.capEmptyBehavior !== undefined) { if (!(CAP_EMPTY_BEHAVIORS as readonly string[]).includes(String(patch.capEmptyBehavior))) errors.push(fill(E.behavior, { value: String(patch.capEmptyBehavior), allowed: CAP_EMPTY_BEHAVIORS.join(", ") })); else next.capEmptyBehavior = patch.capEmptyBehavior; }
   if (errors.length) return { ok: false, errors };
   const changes: SettingChange[] = (Object.keys(cur) as (keyof BrainSettingsRow)[]).filter((k) => String(cur[k]) !== String(next[k])).map((k) => ({ field: k, from: cur[k] === null ? null : String(cur[k]), to: next[k] === null ? null : String(next[k]) }));
   return { ok: true, next, changes };
 }
 
-export type SettingsDeps = { store?: SettingsStore; events?: EventDeps; now?: () => number; direction?: "tighten" };
+export type SettingsDeps = { store?: SettingsStore; events?: EventDeps; now?: () => number; direction?: "tighten"; /** Tur 79: uç yanıtındaki insan metninin dili (verilmezse iç kayıt dili) */ lang?: string };
 /** CAP_EMPTY bir ARIZA DEĞİLDİR, kurulumun kendi ayarıdır (20 Eyl satır 87): olay YAZILMAZ (her plan tikinde Neon yazımı ve bildirim olurdu — A-9), sebep planlama kaydına düşer. */
 export type RuntimeOutcome = { ok: true; runtime: BrainRuntime; row: BrainSettingsRow } | { ok: false; refusal: "SETTINGS_UNREADABLE"; detail: string; event: EmitResult | null }
   | { ok: false; refusal: "CAP_EMPTY"; detail: string; event: null; row: BrainSettingsRow };
 /** U-3 — boş tavanın anlamı, YALNIZ veriden. Panelde ve planlama kaydında aynı cümle. */
-export const CAP_EMPTY_SENTENCE = "Aylık maliyet tavanı girilmedi ve tavan boşken davranış \"Beyin çağrılmaz\": karar motoru (Claude) çağrılmıyor, bu yüzden Claude için para harcanmıyor. Motor tiklemeye, açık pozisyonun çıkışına ve borsadaki korumaya devam ediyor. Tavanı panelden girersen karar motoru bir sonraki planlama turunda çalışır.";
+export const CAP_EMPTY_SENTENCE = BS(RECORD_LANG).capEmpty;
 /** U-3 — toplam tavan girilmiş, altyapı maliyeti girilmemiş: pay türetilemez. Sayı UYDURULMAZ (0 da yazılmaz). */
-export const INFRA_EMPTY_SENTENCE = "Aylık altyapı maliyeti girilmedi: toplam tavandan karar motorunun (Claude) payı türetilemedi, bu yüzden karar motoru çağrılmıyor ve Claude için para harcanmıyor. Motor tiklemeye, açık pozisyonun çıkışına ve borsadaki korumaya devam ediyor. Altyapı maliyetini (kendi Neon, Vercel ve Upstash faturanın aylık toplamı) ya da karar motorunun aylık tavanını panelden girersen karar motoru bir sonraki planlama turunda çalışır.";
+export const INFRA_EMPTY_SENTENCE = BS(RECORD_LANG).infraEmpty;
 const errName = (e: unknown) => (e as { name?: string })?.name ?? "error";
 /** TEK OKUMA YOLU. Fırlatmaz. Okunamaz / satır yok / kayıtlı ayar açık listeye uymuyor ⇒ KAPALI ARIZA: çağrı yapılmaz, olay yazılır, VARSAYILANA DÜŞÜLMEZ (Ö-2). */
 export async function readBrainRuntime(deps: SettingsDeps = {}): Promise<RuntimeOutcome> {
-  const now = (deps.now ?? Date.now)(), store = deps.store ?? prismaSettingsStore();
-  const no = async (detail: string): Promise<RuntimeOutcome> => ({ ok: false, refusal: "SETTINGS_UNREADABLE", detail, event: await stopEngine("BRAIN_SETTINGS_UNREADABLE", `beyin ayarı okunamadı: ${detail} — Beyin çağrılmadı, varsayılana DÜŞÜLMEDİ (Ö-2); çıkış ve borsadaki koruma sürer`, {}, deps.events) });
-  let row: BrainSettingsRow | null; try { row = await store.read(); } catch (e) { return no("depo hatası (" + errName(e) + ")"); }
-  if (row === null) return no("brain_settings satırı yok (id=1)");
-  const v = validatePatch(row, row); if (!v.ok) return no("kayıtlı ayar geçersiz: " + v.errors.join(" · "));
-  const price = priceOf(row.model); if (price === null) return no("kayıtlı model fiyat tablosunda yok: " + row.model);
+  const now = (deps.now ?? Date.now)(), store = deps.store ?? prismaSettingsStore(), lang = deps.lang ?? RECORD_LANG, R = BS(lang).runtime, REC = BS(RECORD_LANG).runtime;
+  // Olay (sicil) metni İÇ KAYIT DİLİNDE; dönen `detail` isteğin dilinde. İkisi aynı ölçümün iki yazılışı.
+  const no = async (detail: string, recDetail: string = detail): Promise<RuntimeOutcome> => ({ ok: false, refusal: "SETTINGS_UNREADABLE", detail, event: await stopEngine("BRAIN_SETTINGS_UNREADABLE", fill(REC.unreadable, { detail: recDetail }), {}, deps.events) });
+  let row: BrainSettingsRow | null; try { row = await store.read(); } catch (e) { return no(fill(R.storeError, { name: errName(e) }), fill(REC.storeError, { name: errName(e) })); }
+  if (row === null) return no(R.noRow, REC.noRow);
+  const v = validatePatch(row, row, lang); if (!v.ok) { const vr = validatePatch(row, row); return no(fill(R.invalid, { errors: v.errors.join(" · ") }), fill(REC.invalid, { errors: vr.ok ? "" : vr.errors.join(" · ") })); }
+  const price = priceOf(row.model); if (price === null) return no(fill(R.noPrice, { model: row.model }), fill(REC.noPrice, { model: row.model }));
   // Tur 65: tavan ve davranış satırda EKSİKSE ayar geçersizdir (eksik alan "boş" SAYILMAZ, Ö-2) — boş tavan yalnız açıkça NULL yazılmış tavandır.
-  if (row.totalCapUsd === undefined || row.infraUsd === undefined || !(CAP_EMPTY_BEHAVIORS as readonly string[]).includes(String(row.capEmptyBehavior))) return no(`kayıtlı ayar eksik: toplam tavan ${row.totalCapUsd === undefined ? "YOK" : "var"} · altyapı maliyeti ${row.infraUsd === undefined ? "YOK" : "var"} · tavan boşken davranış ${String(row.capEmptyBehavior)}`);
+  if (row.totalCapUsd === undefined || row.infraUsd === undefined || !(CAP_EMPTY_BEHAVIORS as readonly string[]).includes(String(row.capEmptyBehavior))) { const inc = (T: typeof R) => fill(T.incomplete, { total: row.totalCapUsd === undefined ? T.absent : T.present, infra: row.infraUsd === undefined ? T.absent : T.present, behavior: String(row.capEmptyBehavior) }); return no(inc(R), inc(REC)); }
   // TAVAN (Tur 65): Beyin aylık tavanı = ayar; yoksa toplam tavandan TÜRETİLİR; ikisi de boşsa davranış AYARDAN — BRAIN_OFF ⇒ Beyin'e çalışma değeri VERİLMEZ (çağrı yapılamaz).
   // Tur 66: toplam tavan VAR ama altyapı maliyeti girilmedi ⇒ pay TÜRETİLEMEZ ⇒ Beyin çağrılmaz (davranıştan bağımsız; olay yok — arıza değil, kurulumun eksik ayarı).
   const share = brainShareOf(row), monthly = share.kind === "ayar" || share.kind === "türetildi" ? share.usd : null;
-  if (share.kind === "türetilemedi") return { ok: false, refusal: "CAP_EMPTY", detail: INFRA_EMPTY_SENTENCE, event: null, row };
-  if (monthly === null && row.capEmptyBehavior === "BRAIN_OFF") return { ok: false, refusal: "CAP_EMPTY", detail: CAP_EMPTY_SENTENCE, event: null, row };
+  if (share.kind === "türetilemedi") return { ok: false, refusal: "CAP_EMPTY", detail: BS(lang).infraEmpty, event: null, row };
+  if (monthly === null && row.capEmptyBehavior === "BRAIN_OFF") return { ok: false, refusal: "CAP_EMPTY", detail: BS(lang).capEmpty, event: null, row };
   const p = periodOf(now), d = new Date(now), dayStart = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   const runtime: BrainRuntime = { model: row.model, callIntervalMs: row.callIntervalMs, candidates: row.candidates, candleLimit: row.candleLimit,
     price: { ...price, stale: priceStale(price, now) },
     cap: { monthlyUsd: monthly, monthlyFrom: row.monthlyCapUsd !== null ? "ayar" : monthly !== null ? "türetildi" : "sınırsız", totalUsd: row.totalCapUsd, infraUsd: row.infraUsd, emptyBehavior: row.capEmptyBehavior, dailyCalls: row.dailyCallCap ?? derivedDailyCallCap(row.callIntervalMs), dailyFrom: row.dailyCallCap === null ? "türetildi" : "ayar", periodStart: p.start, periodEnd: p.end, dayStart },
-    source: `brain_settings#1 (${PERIOD_BASIS}) · fiyat ${price.source} okuma ${price.readAt}` };
+    source: fill(R.source, { basis: PERIOD_BASIS, price: price.source, readAt: price.readAt }) };
   return { ok: true, runtime, row };
 }
 
 /** U-3 — MALİYET TAVANI YÜZEYİ: her sayı insan biriminde ($/ay, çağrı/gün), boş hâlin anlamı CÜMLEYLE. Yalnız VERİDEN kurulur (satır: toplam tavan · altyapı · Claude tavanı); sayı uydurulmaz.
  *  Tur 66 (K2): altyapı maliyeti ayardır; girilmediyse "girilmedi" yazılır, 0 YAZILMAZ ve pay türetilmez. */
-export function costCapView(r: BrainSettingsRow): { totalUsd: string | null; brainMonthlyUsd: string | null; brainMonthlyFrom: "ayar" | "türetildi" | "yok"; infraUsd: string | null; behavior: CapEmptyBehavior; dailyCalls: number; sentence: string; behaviorSentence: string } {
-  const sh = brainShareOf(r), m = sh.kind === "ayar" || sh.kind === "türetildi" ? sh.usd : null, daily = r.dailyCallCap ?? derivedDailyCallCap(r.callIntervalMs), usd = (v: string) => `${new D(v).toFixed(2)} $/ay`;
+export function costCapView(r: BrainSettingsRow, lang: string = RECORD_LANG): { totalUsd: string | null; brainMonthlyUsd: string | null; brainMonthlyFrom: "ayar" | "türetildi" | "yok"; infraUsd: string | null; behavior: CapEmptyBehavior; dailyCalls: number; sentence: string; behaviorSentence: string } {
+  const C = BS(lang).cap, sh = brainShareOf(r), m = sh.kind === "ayar" || sh.kind === "türetildi" ? sh.usd : null, daily = r.dailyCallCap ?? derivedDailyCallCap(r.callIntervalMs), usd = (v: string) => fill(C.usd, { v: new D(v).toFixed(2) });
   // Tur 66 (S65-2): "+1" gün sınırı payı cümleyle; tavan cümlesi faturanın KİMİN hesabına gittiğini ve altyapının kalemlerini yazar (kalem tutarı ayarda YOK ⇒ "ayrıntı girilmedi", sayı uydurulmaz).
-  const dailyText = r.dailyCallCap !== null ? `günde en çok ${daily} kez (ayarda girildi)`
-    : `günde en çok ${daily} kez (${hoursOf(r.callIntervalMs)} saatte bir çağrı günde ${daily - 1} eder; artı 1 gün sınırı payı: bir çağrı günün başında, bir sonraki aynı takvim gününün sonunda düşebilir)`;
-  const bill = " Bu tutarların faturası kurulumu yapanın KENDİ hesaplarına gider: altyapı için kendi Neon (veritabanı), Vercel (sunucu) ve Upstash (önbellek) hesapların, karar motoru için kendi Anthropic (Claude) hesabın. Altyapının kalem kalem tutarı ayarda yok (ayrıntı girilmedi); ayarda yalnız aylık toplamı durur.";
-  const behaviorSentence = r.capEmptyBehavior === "BRAIN_OFF" ? "Tavan boşken davranış: karar motoru ÇAĞRILMAZ (varsayılan). Tavan boş bırakılırsa Claude'a hiç para harcanmaz; motor tikler ve korur."
-    : "Tavan boşken davranış: SINIR YOK. Tavan boş bırakılırsa karar motorunun aylık harcaması sınırlanmaz; yalnız günlük çağrı tavanı geçerli kalır.";
+  const dailyText = r.dailyCallCap !== null ? fill(C.dailySet, { n: daily }) : fill(C.dailyDerived, { n: daily, hours: hoursOf(r.callIntervalMs), calls: daily - 1 });
+  const bill = ` ${C.bill}`;
+  const behaviorSentence = r.capEmptyBehavior === "BRAIN_OFF" ? C.behaviorOff : C.behaviorNoLimit;
   const sentence = r.totalCapUsd !== null
     ? (r.infraUsd === null
-      ? (r.monthlyCapUsd !== null ? `Aylık toplam maliyet tavanı ${usd(r.totalCapUsd)}. Aylık altyapı maliyeti girilmedi, bu yüzden karar motorunun payı toplam tavandan türetilmedi; karar motorunun (Claude) aylık tavanı ayarda ayrıca ${usd(r.monthlyCapUsd)} olarak girildiği için karar motoru bu tavanla çalışır. Karar motoru ${dailyText} çağrılır.${bill}`
-        : `Aylık toplam maliyet tavanı ${usd(r.totalCapUsd)}. ${INFRA_EMPTY_SENTENCE}${bill}`)
-      : `Aylık toplam maliyet tavanı ${usd(r.totalCapUsd)}. Bunun ${usd(r.infraUsd)}'ı girilen altyapı maliyetidir (veritabanı, sunucu, önbellek); karar motoruna (Claude) kalan pay ${r.monthlyCapUsd !== null ? `ayarda ayrıca ${usd(r.monthlyCapUsd)} olarak girildi` : usd(m as string)}. Karar motoru ${dailyText} çağrılır.${bill}`)
-    : m !== null ? `Aylık toplam maliyet tavanı girilmedi. Karar motorunun (Claude) aylık tavanı ayarda ${usd(m)} olarak girildiği için karar motoru bu tavanla çalışır; ${dailyText} çağrılır.${bill}`
-    : r.capEmptyBehavior === "BRAIN_OFF" ? CAP_EMPTY_SENTENCE
-    : `Aylık maliyet tavanı girilmedi ve tavan boşken davranış "sınır yok": karar motorunun (Claude) aylık harcaması SINIRLANMIYOR; yalnız günlük çağrı tavanı (günde ${daily} çağrı) geçerli.`;
+      ? (r.monthlyCapUsd !== null ? `${fill(C.totalNoInfraBrain, { total: usd(r.totalCapUsd), brain: usd(r.monthlyCapUsd), daily: dailyText })}${bill}`
+        : `${fill(C.totalOnly, { total: usd(r.totalCapUsd) })} ${BS(lang).infraEmpty}${bill}`)
+      : `${fill(C.totalWithInfra, { total: usd(r.totalCapUsd), infra: usd(r.infraUsd), share: r.monthlyCapUsd !== null ? fill(C.shareSet, { brain: usd(r.monthlyCapUsd) }) : usd(m as string), daily: dailyText })}${bill}`)
+    : m !== null ? `${fill(C.noTotalBrain, { brain: usd(m), daily: dailyText })}${bill}`
+    : r.capEmptyBehavior === "BRAIN_OFF" ? BS(lang).capEmpty
+    : fill(C.noLimit, { n: daily });
   return { totalUsd: r.totalCapUsd, brainMonthlyUsd: m, brainMonthlyFrom: sh.kind === "ayar" ? "ayar" : sh.kind === "türetildi" ? "türetildi" : "yok", infraUsd: r.infraUsd, behavior: r.capEmptyBehavior, dailyCalls: daily, sentence, behaviorSentence };
 }
 
@@ -200,39 +204,39 @@ export function priceDirection(a: PriceRow | null, b: PriceRow | null): "azalır
   return i === 0 && o === 0 ? "aynı" : i <= 0 && o <= 0 ? "azalır" : i >= 0 && o >= 0 ? "artar" : "bilinmiyor";
 }
 /** Değişiklik harcama iznini ARTIRIYOR mu? Boş dizi = artırmıyor (azaltıyor ya da aynı). Her gerekçe bir cümledir (U-3). */
-export function raisesSpend(cur: BrainSettingsRow, next: BrainSettingsRow): string[] {
+export function raisesSpend(cur: BrainSettingsRow, next: BrainSettingsRow, lang: string = RECORD_LANG): string[] {
   // U-3: her gerekçe YALNIZ VERİDEN, birimiyle: sonlu iki değer "eski → yeni $/ay"; sonsuz uç "sınır yok"; 0 (boş tavan + Beyin çağrılmaz) "karar motoru çağrılmıyor".
-  const a = spendAllowance(cur), b = spendAllowance(next), out: string[] = [], m = (d: InstanceType<typeof D>) => (d.isFinite() ? (d.isZero() ? "0 $/ay (karar motoru çağrılmıyor)" : `${d.toFixed(2)} $/ay`) : "sınır yok");
-  if (b.total.gt(a.total)) out.push(`aylık toplam maliyet tavanı ${m(a.total)} → ${m(b.total)}`);
-  if (b.monthly.gt(a.monthly)) out.push(`karar motorunun aylık harcama izni ${m(a.monthly)} → ${m(b.monthly)}`);
-  if (b.daily > a.daily) out.push(`karar motorunun günlük çağrı izni günde ${a.daily} → ${b.daily} çağrı`);
+  const X = BS(lang).raises, a = spendAllowance(cur), b = spendAllowance(next), out: string[] = [], m = (d: InstanceType<typeof D>) => (d.isFinite() ? (d.isZero() ? X.zero : fill(X.usdMonth, { v: d.toFixed(2) })) : X.noLimit);
+  if (b.total.gt(a.total)) out.push(fill(X.total, { from: m(a.total), to: m(b.total) }));
+  if (b.monthly.gt(a.monthly)) out.push(fill(X.monthly, { from: m(a.monthly), to: m(b.monthly) }));
+  if (b.daily > a.daily) out.push(fill(X.daily, { from: a.daily, to: b.daily }));
   // Tur 66 · 0.2 (Üretim K1, 24 Eyl: "NO_LIMIT'e geçmek hassas eylemdir"): tavan doluyken geçiş bugünkü izni değiştirmez ama "tavan boşalırsa sınır yok" hükmünü KURAR ⇒ hassas.
-  if (cur.capEmptyBehavior !== "NO_LIMIT" && next.capEmptyBehavior === "NO_LIMIT") out.push("tavan boşken davranış \"karar motoru çağrılmaz\" → \"sınır yok\" (tavan boşalırsa aylık harcama sınırlanmaz)");
+  if (cur.capEmptyBehavior !== "NO_LIMIT" && next.capEmptyBehavior === "NO_LIMIT") out.push(X.behavior);
   // Tur 66 · 1d (S-8): çağrı başına ve ayda harcamayı belirleyen dört alan. Azaltan yön serbest; artıran ya da yönü ÖLÇÜLEMEYEN değişiklik hassas uçtan.
   if (cur.model !== next.model) { const d = priceDirection(priceOf(cur.model), priceOf(next.model));
-    if (d === "artar") out.push(`model ${cur.model} → ${next.model}: fiyat tablosunda çağrı başına maliyet ARTIYOR`);
-    if (d === "bilinmiyor") out.push(`model ${cur.model} → ${next.model}: fiyat tablosundan yön KARAR VERİLEMEDİ (fiyatı tabloda yok ya da giriş ve çıkış fiyatı ters yönde)`); }
-  if (next.callIntervalMs < cur.callIntervalMs) out.push(`çağrı aralığı ${new D(cur.callIntervalMs).div(HOUR_MS).toFixed(0)} saatten ${new D(next.callIntervalMs).div(HOUR_MS).toFixed(0)} saate KISALIYOR (ayda daha çok çağrı)`);
-  if (next.candidates > cur.candidates) out.push(`aday sayısı ${cur.candidates} → ${next.candidates} (çağrı başına daha çok girdi)`);
-  if (next.candleLimit > cur.candleLimit) out.push(`mum sayısı ${cur.candleLimit} → ${next.candleLimit} (çağrı başına daha çok girdi)`);
+    if (d === "artar") out.push(fill(X.modelUp, { from: cur.model, to: next.model }));
+    if (d === "bilinmiyor") out.push(fill(X.modelUnknown, { from: cur.model, to: next.model })); }
+  if (next.callIntervalMs < cur.callIntervalMs) out.push(fill(X.interval, { from: new D(cur.callIntervalMs).div(HOUR_MS).toFixed(0), to: new D(next.callIntervalMs).div(HOUR_MS).toFixed(0) }));
+  if (next.candidates > cur.candidates) out.push(fill(X.candidates, { from: cur.candidates, to: next.candidates }));
+  if (next.candleLimit > cur.candleLimit) out.push(fill(X.candles, { from: cur.candleLimit, to: next.candleLimit }));
   // Tur 67 (K3, S-8 yönü): tik aralığını KISALTMAK (daha sık) Vercel çağrısını artırır ⇒ hassas; girilmemiş (motor tiklemiyor) aralığa değer vermek de çağrıyı 0'dan artırır ⇒ hassas. Uzatmak serbest.
-  if (typeof next.tickMs === "number" && (cur.tickMs === null || (typeof cur.tickMs === "number" && next.tickMs < cur.tickMs))) out.push(`tik aralığı ${cur.tickMs === null ? "girilmemişti (motor tiklemiyordu)" : tickText(cur.tickMs)} → ${tickText(next.tickMs)}: motor daha SIK tikler (ayda daha çok sunucu çağrısı)`);
+  if (typeof next.tickMs === "number" && (cur.tickMs === null || (typeof cur.tickMs === "number" && next.tickMs < cur.tickMs))) out.push(fill(X.tick, { from: cur.tickMs === null ? X.tickUnset : tickText(cur.tickMs, lang), to: tickText(next.tickMs, lang) }));
   return out;
 }
 /** YAZMA (E-1 izi, S-8 hassas eylem): doğrula → ayarı ve defteri AYNI işlemde yaz. Değişiklik ANINDA etkilidir: motor ayarı her planlama turunda okur, yeniden dağıtım gerekmez. */
 export async function writeBrainSettings(patch: SettingsPatch, by: string, deps: SettingsDeps = {}): Promise<WriteOutcome> {
-  const store = deps.store ?? prismaSettingsStore();
-  let cur: BrainSettingsRow | null; try { cur = await store.read(); } catch (e) { return { ok: false, status: 503, reason: "STORE_UNAVAILABLE", errors: ["ayar okunamadı (" + errName(e) + ")"] }; }
-  if (cur === null) return { ok: false, status: 409, reason: "NO_ROW", errors: ["brain_settings satırı yok (id=1); göç uygulanmamış olabilir"] };
+  const store = deps.store ?? prismaSettingsStore(), lang = deps.lang ?? RECORD_LANG, W = BS(lang).write;
+  let cur: BrainSettingsRow | null; try { cur = await store.read(); } catch (e) { return { ok: false, status: 503, reason: "STORE_UNAVAILABLE", errors: [fill(W.readFailed, { name: errName(e) })] }; }
+  if (cur === null) return { ok: false, status: 409, reason: "NO_ROW", errors: [W.noRow] };
   if (deps.direction === "tighten") { const extra = Object.keys(patch).filter((k) => !(TIGHTEN_FIELDS as readonly string[]).includes(k));
-    if (extra.length) return { ok: false, status: 400, reason: "NOT_TIGHTEN_FIELD", errors: [`serbest (kodsuz) yol yalnız tavan alanlarını değiştirir; bu alanlar hassas uçtan (tek kullanımlık kodla) değişir: ${extra.join(", ")}`] }; }
-  const v = validatePatch(cur, patch); if (!v.ok) return { ok: false, status: 400, reason: "INVALID", errors: v.errors };
-  if (deps.direction === "tighten") { const why = raisesSpend(cur, v.next);
-    if (why.length) return { ok: false, status: 403, reason: "RAISES_SPEND", errors: [`harcama izni artıyor: ${why.join(" · ")}`] }; }
+    if (extra.length) return { ok: false, status: 400, reason: "NOT_TIGHTEN_FIELD", errors: [fill(W.notTighten, { fields: extra.join(", ") })] }; }
+  const v = validatePatch(cur, patch, lang); if (!v.ok) return { ok: false, status: 400, reason: "INVALID", errors: v.errors };
+  if (deps.direction === "tighten") { const why = raisesSpend(cur, v.next, lang);
+    if (why.length) return { ok: false, status: 403, reason: "RAISES_SPEND", errors: [fill(W.raises, { why: why.join(" · ") })] }; }
   // Tur 65 (ölçüldü: shadow defterinde serbest uçtan iki `changes: []` satırı): değişmeyen yama YAZILMAZ ve deftere satır düşmez — E-1 değişikliğin izidir, değişiklik yoksa iz de yoktur
   // (giriş şalteri kalıbı, `writeEntrySettings`). Kodsuz serbest uç bu yüzden defteri boş satırla dolduramaz.
   if (v.changes.length === 0) return { ok: true, next: v.next, changes: [] };
-  try { await store.write(v.next, by, v.changes); } catch (e) { return { ok: false, status: 503, reason: "STORE_UNAVAILABLE", errors: ["ayar ya da E-1 defteri yazılamadı (" + errName(e) + ") — ayar DEĞİŞMEDİ"] }; }
+  try { await store.write(v.next, by, v.changes); } catch (e) { return { ok: false, status: 503, reason: "STORE_UNAVAILABLE", errors: [fill(W.writeFailed, { name: errName(e) })] }; }
   return { ok: true, next: v.next, changes: v.changes };
 }
 
@@ -241,23 +245,23 @@ export type TickRead = { ok: true; tickMs: number } | { ok: false; detail: strin
 /** TİK ARALIĞININ TEK OKUMA YOLU. Yalnız izin kopyasını yazan iki yerden çağrılır: Neon tazelemesi (engine-control `refreshPermitCopy`, 20 dakikada bir, Neon zaten uyanık) ve RESUME. Tik yolundan
  *  ÇAĞRILMAZ (tik başına Neon 0). Fırlatmaz. KAPALI ARIZA: okunamadı / satır yok / alan YOK (eksik alan "boş" sayılmaz) / NULL (girilmedi) / seçenek kümesi dışı ⇒ ok:false ve sebep; varsayılan sayı YOK.
  *  Okuyucu `engine-control`e ENJEKTE edilir (o modül bu modülü içe aktaramaz: durdurma ucunun grafiği Beyin birimine uzanırdı — gate:stop-service (1), K-7). */
-export async function readTickMs(deps: { store?: SettingsStore } = {}): Promise<TickRead> {
-  let row: BrainSettingsRow | null; try { row = await (deps.store ?? prismaSettingsStore()).read(); } catch (e) { return { ok: false, detail: `ayar okunamadı (${errName(e)})` }; }
-  if (row === null) return { ok: false, detail: "brain_settings satırı yok (id=1); göç uygulanmamış olabilir" };
-  if (row.tickMs === undefined) return { ok: false, detail: "kayıtlı ayarda tik aralığı alanı YOK (eksik alan boş sayılmaz)" };
-  if (row.tickMs === null) return { ok: false, detail: "tik aralığı girilmedi (boş kurulum): panelden bir aralık seçilmeden motor tiklemez" };
-  if (!TICK_CHOICES_MS.includes(row.tickMs)) return { ok: false, detail: `kayıtlı tik aralığı seçenek kümesinde değil (${tickText(row.tickMs)})` };
+export async function readTickMs(deps: { store?: SettingsStore } = {}, lang: string = RECORD_LANG): Promise<TickRead> {
+  const K = BS(lang).tick;
+  let row: BrainSettingsRow | null; try { row = await (deps.store ?? prismaSettingsStore()).read(); } catch (e) { return { ok: false, detail: fill(K.readFailed, { name: errName(e) }) }; }
+  if (row === null) return { ok: false, detail: K.noRow };
+  if (row.tickMs === undefined) return { ok: false, detail: K.noField };
+  if (row.tickMs === null) return { ok: false, detail: K.unset };
+  if (!TICK_CHOICES_MS.includes(row.tickMs)) return { ok: false, detail: fill(K.outside, { tick: tickText(row.tickMs, lang) }) };
   return { ok: true, tickMs: row.tickMs };
 }
 /** U-3 — TİK ARALIĞI YÜZEYİ: her süre insan biriminde (saniye/dakika; ham milisaniye YOK), boş hâlin anlamı cümleyle, değişikliğin ne zaman etkili olduğu TAZELEME ARALIĞINDAN türetilmiş dakikayla,
  *  yön (daha sık = kod ister, daha seyrek = kodsuz) cümleyle. Yalnız VERİDEN kurulur; sayı uydurulmaz. */
-export function tickView(r: BrainSettingsRow): { tickMs: number | null; sentence: string; effectSentence: string; directionSentence: string; choices: { ms: number; label: string; current: boolean }[] } {
-  const t = r.tickMs ?? null, refreshMin = PERMIT_REFRESH_MS / 60_000;
-  const sentence = t === null ? "Tik aralığı girilmedi: motor bir aralık seçilmeden başlatılamaz ve tiklemez (yazılım aralığı kendisi seçmez). Aşağıdan bir aralık seç."
-    : `Motor ${tickText(t)} tikler: her tikte çalışma izni, açık pozisyonlar ve piyasa okunur, korumalar denetlenir.`;
-  const effectSentence = `Değişiklik en geç ${refreshMin} dakikada (izin kopyasının bir sonraki tazelemesinde) ya da motor yeniden başlatılınca etkili olur. Durdurma bu ayardan bağımsızdır: her an, anında geçerlidir.`;
-  const directionSentence = "Daha seyrek bir aralık (sunucu çağrısı azalır) kod istemez; daha sık bir aralık (sunucu çağrısı artar) tek kullanımlık kod ister. Aralık ancak cron döneminin katı olabilir.";
-  return { tickMs: t, sentence, effectSentence, directionSentence, choices: TICK_CHOICES_MS.map((ms) => ({ ms, label: tickText(ms), current: ms === t })) };
+export function tickView(r: BrainSettingsRow, lang: string = RECORD_LANG): { tickMs: number | null; sentence: string; effectSentence: string; directionSentence: string; choices: { ms: number; label: string; current: boolean }[] } {
+  const t = r.tickMs ?? null, refreshMin = PERMIT_REFRESH_MS / 60_000, K = BS(lang).tick;
+  const sentence = t === null ? K.empty : fill(K.runs, { every: tickText(t, lang) });
+  const effectSentence = fill(K.effect, { min: refreshMin });
+  const directionSentence = K.direction;
+  return { tickMs: t, sentence, effectSentence, directionSentence, choices: TICK_CHOICES_MS.map((ms) => ({ ms, label: tickText(ms, lang), current: ms === t })) };
 }
 
 // ---- MALİYET HESAPLAYICISI (madde 2, 5) — jetonlar ÖLÇÜMDEN gelir; kodda sabit jeton sayısı YOKTUR (kapı) ----
@@ -273,16 +277,16 @@ export function costOf(i: { price: PriceRow; tokens: TokenReading; intervalMs: n
 const hoursOf = (ms: number) => new D(ms).div(HOUR_MS).toFixed(0);
 /** SEÇENEK TABLOSU (madde 5, U-3/U-4): model × sıklık; her satır aylık $, altyapı dâhil TOPLAM $ ve 10 $ tavanına göre ✓/✗ taşır ve bir CÜMLE kurar. Jeton ölçülmediyse tablo ÜRETİLMEZ
  *  (çağıran "ölçülmedi" der; sayı uydurulmaz). Jetonlar ÖLÇÜLEN son gerçek çağrının jetonlarıdır: aday/mum ayarı değişirse bir sonraki gerçek çağrı yeni sayıyı ölçer ve tablo güncellenir. */
-export function costOptions(i: { tokens: TokenReading; runtime: BrainRuntime }): { rows: CostRow[]; infraUsd: string | null; totalCapUsd: string | null; tokens: TokenReading } {
+export function costOptions(i: { tokens: TokenReading; runtime: BrainRuntime }, lang: string = RECORD_LANG): { rows: CostRow[]; infraUsd: string | null; totalCapUsd: string | null; tokens: TokenReading } {
   const cap = i.runtime.cap.totalUsd, infra = i.runtime.cap.infraUsd; // Tur 65/66: toplam tavan ve altyapı AYARDAN; girilmediyse satır toplamı/karşılaştırması UYDURULMAZ
-  const rows: CostRow[] = [];
+  const rows: CostRow[] = [], O = BS(lang).options;
   for (const price of BRAIN_PRICES) for (const intervalMs of INTERVAL_CHOICES) {
     const c = costOf({ price, tokens: i.tokens, intervalMs, periodStart: i.runtime.cap.periodStart, periodEnd: i.runtime.cap.periodEnd });
     const total = infra === null ? null : new D(c.monthUsd).add(infra), underCap = cap === null || total === null ? null : total.lte(cap), current = price.model === i.runtime.model && intervalMs === i.runtime.callIntervalMs;
-    const tail = total === null ? "aylık altyapı maliyeti girilmedi: toplam hesaplanamadı, bu satır bir tavanla karşılaştırılamadı"
-      : `girilen altyapı ${money(infra as string)} $/ay ile toplam ${money(total)} $/ay — ${cap === null ? "aylık toplam maliyet tavanı girilmedi: bu satır bir tavanla karşılaştırılamadı" : `${money(cap)} $/ay tavanının ${underCap ? money(new D(cap).sub(total)) + " $/ay ALTINDA" : money(total.sub(cap)) + " $/ay ÜSTÜNDE"}`}`;
+    const tail = total === null ? O.tailNoInfra
+      : fill(O.tail, { infra: money(infra as string), total: money(total), cmp: cap === null ? O.cmpNoCap : fill(underCap ? O.under : O.over, { cap: money(cap), diff: underCap ? money(new D(cap).sub(total)) : money(total.sub(cap)) }) });
     rows.push({ model: price.model, intervalMs, callsPerMonth: c.callsPerMonth, perCallUsd: c.perCallUsd, brainUsd: c.monthUsd, totalUsd: total === null ? null : total.toFixed(4), underCap, current,
-      sentence: `${price.model}, ${hoursOf(intervalMs)} saatte bir: ayda ${c.callsPerMonth} çağrı × çağrı başına ${c.perCallUsd} $ = Beyin ${money(c.monthUsd)} $/ay; ${tail}${current ? " (şu anki ayar)" : ""}.` });
+      sentence: fill(O.row, { model: price.model, hours: hoursOf(intervalMs), calls: c.callsPerMonth, perCall: c.perCallUsd, brain: money(c.monthUsd), tail, current: current ? O.current : "" }) });
   }
   return { rows, infraUsd: infra, totalCapUsd: cap, tokens: i.tokens };
 }

@@ -24,6 +24,9 @@ import type { OpenPlan } from "@/lib/protection";
 import type { BrainRuntime } from "@/lib/brain-settings"; // YALNIZ TİP: değer içe aktarımı olsaydı Beyin grafiği ayar deposuna ve defter modülüne uzanırdı (B-3 kapısı)
 import { BRAIN_INPUT, BRAIN_OUTPUT, RULE_BOUNDS, validateBrainOutput, type BrainInput, type ValidatedOutput, type ValidatedRule } from "./schema";
 import type { ShortMode } from "@/lib/risk-settings";
+import { fill } from "@/lib/i18n";
+import { srvFor, RECORD_LANG } from "@/lib/i18n/srv";
+// TUR 79 (G34 · S5): cümleler SUNUCU SÖZLÜĞÜNDEN (src/lib/i18n/srv · brain.spend). Dil verilmezse İÇ KAYIT DİLİ (tr); uç isteğin dilini geçer. Alanlar, kodlar ve durum kodları dilden bağımsızdır.
 export { BRAIN_INPUT, BRAIN_OUTPUT, BRAIN_RULE, MARKET_SNAPSHOT, RULE_BOUNDS, SENTIMENT_OUTPUT, applySentimentVeto, validateBrainOutput, validateSentimentOutput } from "./schema"; // açık liste: `export *` .mts betiklerinde ad çözümlemez (ölçüldü)
 export type { BrainInput, BrainOutput, BrainRule, SentimentVeto, ValidatedOutput, ValidatedRule } from "./schema";
 
@@ -106,26 +109,26 @@ export type SpendStatus = { monthUsd: string; monthCalls: number; monthCapUsd: s
 export type SpendOutcome = { ok: true; status: SpendStatus } | { ok: false; refusal: "SPEND_CEILING" | "SPEND_UNKNOWN"; detail: string };
 /** İKİ TAVAN: (1) dönem (UTC takvim ayı) harcaması ≥ aylık $ tavanı, (2) bu UTC gününde AÇILMIŞ çağrı satırı ≥ günlük çağrı tavanı. Ölçülemezse SPEND_UNKNOWN — "harcamadım" VARSAYILMAZ (Ö-2).
  *  Günlük sayım `brain_runs` satırlarındandır ve satır çağrıdan ÖNCE açıldığı için kayıt yolu bozulsa bile sayı ilerler: RUN_UNRECORDED döngüsü burada kesilir (kanarya 5). */
-export async function screenBrainSpend(rt: BrainRuntime, store: BrainRunStore): Promise<SpendOutcome> {
-  let month: { calls: number; usd: string }, day: { calls: number; usd: string };
+export async function screenBrainSpend(rt: BrainRuntime, store: BrainRunStore, lang: string = RECORD_LANG): Promise<SpendOutcome> {
+  let month: { calls: number; usd: string }, day: { calls: number; usd: string }; const P = srvFor(lang).brain.spend, FROM = srvFor(lang).brain.from as Record<string, string>;
   try { month = await store.usage(rt.cap.periodStart); day = await store.usage(rt.cap.dayStart); }
-  catch (e) { return { ok: false, refusal: "SPEND_UNKNOWN", detail: `Beyin harcaması ölçülemedi (${(e as { name?: string })?.name ?? "error"}); çağrı yapılmadı, harcanmamış VARSAYILMADI (Ö-2)` }; }
+  catch (e) { return { ok: false, refusal: "SPEND_UNKNOWN", detail: fill(P.unknown, { name: (e as { name?: string })?.name ?? "error" }) }; }
   // Tur 65: aylık $ tavanı null YALNIZ "tavan boş + davranış NO_LIMIT" ayarında olur (kurulumun kendi seçimi) ⇒ aylık denetim YOK, günlük çağrı tavanı AYNEN sürer.
   const cap = rt.cap.monthlyUsd === null ? null : new D(rt.cap.monthlyUsd), spent = new D(month.usd), remaining = cap === null ? null : cap.sub(spent);
   // Tur 66 (S65-2, gate:ui kural 12): aylık tutarlar "$/ay" birimiyle ve İKİ haneyle yazılır (yapılandırılmış alanlar aşağıda tam basamakla kalır — cümle insan içindir, alan ölçüm içindir).
-  const sentence = `${rt.cap.periodStart.toISOString().slice(0, 7)} döneminde Beyin ${month.calls} çağrıda ${spent.toFixed(2)} $/ay harcadı; ${cap === null || remaining === null ? "aylık dolar tavanı YOK (tavan girilmedi ve tavan boşken davranış \"sınır yok\" seçildi)" : `aylık tavan ${cap.toFixed(2)} $/ay (${rt.cap.monthlyFrom}), bu ay kalan ${remaining.toFixed(2)} $/ay`}. Bugün ${day.calls} çağrı açıldı, günlük tavan günde ${rt.cap.dailyCalls} çağrı (${rt.cap.dailyFrom}).`;
+  const sentence = fill(P.sentence, { period: rt.cap.periodStart.toISOString().slice(0, 7), calls: month.calls, spent: spent.toFixed(2), capPart: cap === null || remaining === null ? P.noCap : fill(P.cap, { cap: cap.toFixed(2), from: FROM[rt.cap.monthlyFrom] ?? rt.cap.monthlyFrom, remaining: remaining.toFixed(2) }), dayCalls: day.calls, dailyCap: rt.cap.dailyCalls, dailyFrom: FROM[rt.cap.dailyFrom] ?? rt.cap.dailyFrom });
   const status: SpendStatus = { monthUsd: spent.toFixed(6), monthCalls: month.calls, monthCapUsd: cap === null ? null : cap.toFixed(4), remainingUsd: remaining === null ? null : remaining.toFixed(4), dayCalls: day.calls, dayCapCalls: rt.cap.dailyCalls, sentence };
-  if (cap !== null && spent.gte(cap)) return { ok: false, refusal: "SPEND_CEILING", detail: `aylık Beyin harcama tavanı doldu — ${sentence} Yeni pozisyon açılmaz; çıkış ve borsadaki koruma sürer (M-1, K-1)` };
-  if (day.calls >= rt.cap.dailyCalls) return { ok: false, refusal: "SPEND_CEILING", detail: `günlük Beyin çağrı tavanı doldu — ${sentence} Yeni pozisyon açılmaz; çıkış ve borsadaki koruma sürer (M-1, K-1)` };
+  if (cap !== null && spent.gte(cap)) return { ok: false, refusal: "SPEND_CEILING", detail: fill(P.monthFull, { sentence }) };
+  if (day.calls >= rt.cap.dailyCalls) return { ok: false, refusal: "SPEND_CEILING", detail: fill(P.dayFull, { sentence }) };
   return { ok: true, status };
 }
 
 /** YÜZEY OKUMASI (Tur 25, madde 5): ayar yüzeyinin ihtiyacı olan iki sayı — son ÖLÇÜLEN jeton ve bu dönemin harcaması — Beyin modülünden çıkar. Yüzey kayıt tablosuna doğrudan
  *  dokunmaz (K-8/B-2: doğrulanmamış çıktı dışarıdan okunamaz); yalnız jeton sayısı, çağrı sayısı ve $ döner. Fırlatmaz. */
-export async function readBrainUsage(rt: BrainRuntime, store: BrainRunStore = prismaBrainRunStore()): Promise<{ tokens: { input: number; output: number; at: string; model: string; source: string } | null; spend: SpendOutcome }> {
+export async function readBrainUsage(rt: BrainRuntime, store: BrainRunStore = prismaBrainRunStore(), lang: string = RECORD_LANG): Promise<{ tokens: { input: number; output: number; at: string; model: string; source: string } | null; spend: SpendOutcome }> {
   let tokens: { input: number; output: number; at: string; model: string; source: string } | null = null;
-  try { const t = await store.lastTokens(); if (t) tokens = { input: t.input, output: t.output, at: t.at.toISOString(), model: t.model, source: "sağlayıcının usage alanı (son ölçülen gerçek çağrı)" }; } catch { tokens = null; }
-  return { tokens, spend: await screenBrainSpend(rt, store) };
+  try { const t = await store.lastTokens(); if (t) tokens = { input: t.input, output: t.output, at: t.at.toISOString(), model: t.model, source: srvFor(lang).brain.spend.tokenSource }; } catch { tokens = null; }
+  return { tokens, spend: await screenBrainSpend(rt, store, lang) };
 }
 
 // ---- ÇAĞRI ----

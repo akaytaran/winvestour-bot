@@ -15,7 +15,14 @@ import { stopEngine, type Deps as EventDeps, type EmitResult } from "@/lib/event
  *  Bu turda hiçbir kip SHORT yönünde emir üretmez: emir yolu futures'ı reddeder (G21 kalemi f yazılmadı) ve LONG olmayan kural icraya geçmez (`planFromRule`). */
 export { SHORT_MODES, CLOSED_SHORT_MODE, SHORT_MODE_NOTES, SHORT_MODE_EXECUTION, SHORT_MODE_TODAY } from "./modes";
 export type { ShortMode } from "./modes";
+// Tur 79 (G34): kipin cümleleri DİLE GÖRE — kip yaprağı (modes.ts) B-3 gereği hiçbir şey içe aktarmaz ve TR cümlesinin kaynağı orada kalır; sözlüğün TR kopyası ona DERİN EŞİT
+//   olmak zorundadır (gate:i18n (16b)). Uç (`/api/risk/settings`) cümleyi isteğin dilinde buradan alır.
+export const shortModeNotes = (lang: string = RECORD_LANG): Record<"NONE" | "CARRY_HEDGE" | "FREE", string> => srvFor(lang).risk.modes.notes;
+export const shortModeToday = (lang: string = RECORD_LANG): Record<"NONE" | "CARRY_HEDGE" | "FREE", string> => srvFor(lang).risk.modes.today;
 import { SHORT_MODES, CLOSED_SHORT_MODE, type ShortMode } from "./modes";
+import { fill } from "@/lib/i18n";
+import { srvFor, RECORD_LANG } from "@/lib/i18n/srv";
+// TUR 79 (G34 · S5): cümleler SUNUCU SÖZLÜĞÜNDEN (src/lib/i18n/srv · risk). Dil verilmezse İÇ KAYIT DİLİ (tr); uç isteğin dilini geçer. Ret/kip kodları dilden bağımsızdır.
 
 export type RiskSettingsRow = { leverageCap: number | null; futuresEnabled: boolean; shortMode: ShortMode; m2FuturesMultiple: string | null };
 export type SettingChange = { field: keyof RiskSettingsRow; from: string | null; to: string | null };
@@ -52,37 +59,38 @@ export type PatchOutcome = { ok: true; next: RiskSettingsRow; changes: SettingCh
 const DEC_RE = /^\d{1,8}(\.\d{1,4})?$/;
 /** Yama bütünüyle geçer ya da bütünüyle REDDEDİLİR. Tavan: pozitif tamsayı ya da NULL (üst sınır KODDA YOKTUR — sayı seçmek iş sahibinin işidir, A-1/K-11).
  *  Şalter: tavan NULL iken AÇILAMAZ (kapalı arıza; veritabanında da CHECK var). Kip: açık listeden. M-2 terimi: pozitif ondalık ya da NULL. */
-export function validatePatch(cur: RiskSettingsRow, patch: SettingsPatch): PatchOutcome {
-  const errors: string[] = [], next: RiskSettingsRow = { ...cur };
-  for (const k of Object.keys(patch) as (keyof RiskSettingsRow)[]) if (!(k in cur)) errors.push("bilinmeyen alan: " + String(k));
+export function validatePatch(cur: RiskSettingsRow, patch: SettingsPatch, lang: string = RECORD_LANG): PatchOutcome {
+  const errors: string[] = [], next: RiskSettingsRow = { ...cur }, E = srvFor(lang).risk.errors;
+  for (const k of Object.keys(patch) as (keyof RiskSettingsRow)[]) if (!(k in cur)) errors.push(fill(E.unknownField, { field: String(k) }));
   if (patch.leverageCap !== undefined) { const v = patch.leverageCap;
-    if (v !== null && !(typeof v === "number" && Number.isInteger(v) && v >= 1)) errors.push("kaldıraç tavanı pozitif tamsayı (≥ 1) ya da null olmalı: " + String(v)); else next.leverageCap = v; }
+    if (v !== null && !(typeof v === "number" && Number.isInteger(v) && v >= 1)) errors.push(fill(E.leverageCap, { value: String(v) })); else next.leverageCap = v; }
   if (patch.futuresEnabled !== undefined) { const v = patch.futuresEnabled;
-    if (typeof v !== "boolean") errors.push("futures şalteri boolean olmalı: " + String(v)); else next.futuresEnabled = v; }
+    if (typeof v !== "boolean") errors.push(fill(E.futures, { value: String(v) })); else next.futuresEnabled = v; }
   if (patch.shortMode !== undefined) { const v = patch.shortMode;
-    if (typeof v !== "string" || !(SHORT_MODES as readonly string[]).includes(v)) errors.push(`SHORT kipi açık listede değil: ${String(v)} — izinli: ${SHORT_MODES.join(", ")}`); else next.shortMode = v as ShortMode; }
+    if (typeof v !== "string" || !(SHORT_MODES as readonly string[]).includes(v)) errors.push(fill(E.shortMode, { value: String(v), allowed: SHORT_MODES.join(", ") })); else next.shortMode = v as ShortMode; }
   if (patch.m2FuturesMultiple !== undefined) { const v = patch.m2FuturesMultiple;
-    if (v !== null && !(typeof v === "string" && DEC_RE.test(v) && Number(v) > 0)) errors.push("M-2 futures ÇARPANI pozitif ondalık dize ya da null olmalı (birim: çarpan, bp değil): " + String(v)); else next.m2FuturesMultiple = v; }
-  if (next.futuresEnabled && next.leverageCap === null) errors.push("kaldıraç tavanı seçilmeden futures şalteri açılamaz (K-11, kapalı arıza): önce leverage_cap");
+    if (v !== null && !(typeof v === "string" && DEC_RE.test(v) && Number(v) > 0)) errors.push(fill(E.m2, { value: String(v) })); else next.m2FuturesMultiple = v; }
+  if (next.futuresEnabled && next.leverageCap === null) errors.push(E.futuresNoCap);
   if (errors.length) return { ok: false, errors };
   const changes: SettingChange[] = (Object.keys(cur) as (keyof RiskSettingsRow)[]).filter((k) => String(cur[k]) !== String(next[k])).map((k) => ({ field: k, from: cur[k] === null ? null : String(cur[k]), to: next[k] === null ? null : String(next[k]) }));
   return { ok: true, next, changes };
 }
 
 // ---- OKUMA (TEK YOL) + KAPALI ARIZA ----
-export type SettingsDeps = { store?: SettingsStore; events?: EventDeps; now?: () => number };
+export type SettingsDeps = { store?: SettingsStore; events?: EventDeps; now?: () => number; /** Tur 79: dönen insan metninin dili (verilmezse iç kayıt dili) */ lang?: string };
 export type RuntimeOutcome = { ok: true; runtime: RiskRuntime; row: RiskSettingsRow } | { ok: false; refusal: "RISK_SETTINGS_UNREADABLE"; detail: string; event: EmitResult | null };
 const errName = (e: unknown) => (e as { name?: string })?.name ?? "error";
 /** TEK OKUMA YOLU. Fırlatmaz. Okunamaz / satır yok / kayıtlı ayar geçersiz ⇒ KAPALI ARIZA: futures yolu açılmaz, olay yazılır, VARSAYILANA DÜŞÜLMEZ (Ö-2). */
 export async function readRiskRuntime(deps: SettingsDeps = {}): Promise<RuntimeOutcome> {
-  const store = deps.store ?? prismaRiskSettingsStore();
-  const no = async (detail: string): Promise<RuntimeOutcome> => ({ ok: false, refusal: "RISK_SETTINGS_UNREADABLE", detail,
-    event: await stopEngine("RISK_SETTINGS_UNREADABLE", `risk ayarı okunamadı: ${detail} — futures yolu açılmadı, varsayılana DÜŞÜLMEDİ (Ö-2); spot çıkış ve borsadaki koruma sürer`, {}, deps.events) });
-  let row: RiskSettingsRow | null; try { row = await store.read(); } catch (e) { return no("depo hatası (" + errName(e) + ")"); }
-  if (row === null) return no("risk_settings satırı yok (id=1); göç uygulanmamış olabilir");
-  const v = validatePatch(row, row); if (!v.ok) return no("kayıtlı ayar geçersiz: " + v.errors.join(" · "));
-  const futures = judgeFutures(row);
-  return { ok: true, row, runtime: { ...row, futures, source: "risk_settings#1", sentence: sentenceOf(row, futures) } };
+  const store = deps.store ?? prismaRiskSettingsStore(), lang = deps.lang ?? RECORD_LANG, R = srvFor(lang).risk.runtime, REC = srvFor(RECORD_LANG).risk.runtime;
+  // Olay (sicil) metni İÇ KAYIT DİLİNDE; dönen `detail` isteğin dilinde.
+  const no = async (detail: string, recDetail: string = detail): Promise<RuntimeOutcome> => ({ ok: false, refusal: "RISK_SETTINGS_UNREADABLE", detail,
+    event: await stopEngine("RISK_SETTINGS_UNREADABLE", fill(REC.unreadable, { detail: recDetail }), {}, deps.events) });
+  let row: RiskSettingsRow | null; try { row = await store.read(); } catch (e) { return no(fill(R.storeError, { name: errName(e) }), fill(REC.storeError, { name: errName(e) })); }
+  if (row === null) return no(R.noRow, REC.noRow);
+  const v = validatePatch(row, row, lang); if (!v.ok) { const vr = validatePatch(row, row); return no(fill(R.invalid, { errors: v.errors.join(" · ") }), fill(REC.invalid, { errors: vr.ok ? "" : vr.errors.join(" · ") })); }
+  const futures = judgeFutures(row, lang);
+  return { ok: true, row, runtime: { ...row, futures, source: "risk_settings#1", sentence: sentenceOf(row, futures, lang) } };
 }
 
 // ---- FUTURES HÜKMÜ (KAPALI ARIZA) ----
@@ -92,15 +100,14 @@ export type FuturesRefusal = (typeof FUTURES_REFUSALS)[keyof typeof FUTURES_REFU
 export type FuturesVerdict = { allowed: true; leverageCap: number; m2FuturesMultiple: string | null } | { allowed: false; refusal: FuturesRefusal; detail: string };
 /** RET SEBEBİNİN İNSAN CÜMLESİ (Tur 37 · U-3). `detail` denetçi içindir (sütun adı, kural numarası taşır); EKRANA bu sözlükten gelen cümle çıkar — ham kod ekrana ÇIKMAZ (kapı: gate:ui).
  *  `satisfies Record<FuturesRefusal, string>`: yeni bir ret sebebi eklenirse derleyici cümlesini ZORLAR; ekranda sebepsiz "KAPALI" yazan bir hâl doğamaz. */
-export const FUTURES_REFUSAL_TEXT = {
-  "futures-unavailable:leverage-cap-null": "Kaldıraç tavanı seçilmediği için futures yolu KAPALI. Tavan seçilmeden kaldıraçlı işlem açılmaz ve yazılım kendi başına bir sayı seçmez — o sayı iş sahibinin kararıdır.",
-  "futures-unavailable:futures-disabled": "Futures şalteri kapalı olduğu için futures yolu KAPALI. Şalteri açmak, futures hesabının açılmasını ve borsa anahtarının bu yetkiyle yeniden kabul edilmesini gerektirir.",
-  "futures-unavailable:settings-unreadable": "Risk ayarı okunamadı, bu yüzden futures yolu KAPALI sayıldı. Okunamayan ayar “sorun yok” demek değildir; kapalı arıza uygulanır ve motor durdurulur.",
-} as const satisfies Record<FuturesRefusal, string>;
+export const futuresRefusalText = (lang: string = RECORD_LANG): Record<FuturesRefusal, string> => { const T = srvFor(lang).risk.futuresText;
+  return { [FUTURES_REFUSALS.capNull]: T.capNull, [FUTURES_REFUSALS.disabled]: T.disabled, [FUTURES_REFUSALS.unreadable]: T.unreadable } satisfies Record<FuturesRefusal, string>; };
+export const FUTURES_REFUSAL_TEXT: Record<FuturesRefusal, string> = futuresRefusalText();
 /** SAF. Tavan NULL ⇒ kapalı · şalter kapalı ⇒ kapalı. İkisi de tamamsa ayar futures'a İZİN VERİR — ama bu turda emir yolu yine de reddeder (G21 kalemi f yazılmadı, K2). */
-export function judgeFutures(row: RiskSettingsRow): FuturesVerdict {
-  if (row.leverageCap === null) return { allowed: false, refusal: FUTURES_REFUSALS.capNull, detail: "kaldıraç tavanı SEÇİLMEDİ (risk_settings.leverage_cap NULL) — K-11: tavansız kaldıraç yoktur; sayı icat edilmez" };
-  if (!row.futuresEnabled) return { allowed: false, refusal: FUTURES_REFUSALS.disabled, detail: "futures şalteri KAPALI (risk_settings.futures_enabled = false) — A-5: hesabın açılması ve şalter iş sahibindedir" };
+export function judgeFutures(row: RiskSettingsRow, lang: string = RECORD_LANG): FuturesVerdict {
+  const T = srvFor(lang).risk.futuresDetail;
+  if (row.leverageCap === null) return { allowed: false, refusal: FUTURES_REFUSALS.capNull, detail: T.capNull };
+  if (!row.futuresEnabled) return { allowed: false, refusal: FUTURES_REFUSALS.disabled, detail: T.disabled };
   return { allowed: true, leverageCap: row.leverageCap, m2FuturesMultiple: row.m2FuturesMultiple };
 }
 /** Futures yolunun TEK KAPISI: ayarı okur, hükmü verir. Okunamazsa KAPALI ARIZA (ret + olay); hiçbir dal "izin var" demez. */
@@ -116,22 +123,23 @@ export async function readShortMode(deps: SettingsDeps = {}): Promise<{ mode: Sh
 }
 
 /** U-3 — YALNIZ VERİDEN CÜMLE: ekranda ve kütükte aynı cümle; "0"/boş ne demek yazılı. */
-export function sentenceOf(row: RiskSettingsRow, v: FuturesVerdict): string {
-  const cap = row.leverageCap === null ? "kaldıraç tavanı SEÇİLMEDİ (boş ⇒ futures kapalı)" : `kaldıraç tavanı ${row.leverageCap}×`;
-  const m2 = row.m2FuturesMultiple === null ? "M-2 futures çarpanı SEÇİLMEDİ (boş ⇒ futures kenarı ölçülemez)" : `M-2 futures çarpanı ${row.m2FuturesMultiple}× (maliyetin katı)`;
-  const kip = row.shortMode === "NONE" ? "SHORT kipi NONE: yalnız uzun yön, bugünkü davranış" : `SHORT kipi ${row.shortMode}`;
-  return `${cap} · futures şalteri ${row.futuresEnabled ? "AÇIK" : "KAPALI"} · ${kip} · ${m2} — futures yolu ${v.allowed ? "ayara göre AÇIK (emir yolu ayrıca yazılmadı: G21 kalemi f)" : `KAPALI: ${v.refusal}`}.`;
+export function sentenceOf(row: RiskSettingsRow, v: FuturesVerdict, lang: string = RECORD_LANG): string {
+  const T = srvFor(lang).risk.summary;
+  const cap = row.leverageCap === null ? T.capUnset : fill(T.cap, { cap: row.leverageCap });
+  const m2 = row.m2FuturesMultiple === null ? T.m2Unset : fill(T.m2, { m2: row.m2FuturesMultiple });
+  const kip = row.shortMode === "NONE" ? T.modeNone : fill(T.mode, { mode: row.shortMode });
+  return fill(T.line, { cap, futures: row.futuresEnabled ? T.on : T.off, mode: kip, m2, path: v.allowed ? T.pathOpen : fill(T.pathClosed, { refusal: v.refusal }) });
 }
 
 // ---- YAZMA (S-8 hassas eylem + E-1 defteri) ----
 export type WriteOutcome = { ok: true; next: RiskSettingsRow; changes: SettingChange[] } | { ok: false; status: 400 | 409 | 503; reason: "INVALID" | "NO_ROW" | "STORE_UNAVAILABLE"; errors: string[] };
 /** YAZMA: doğrula → ayarı ve defteri AYNI işlemde yaz. Uç `withAccess({ cls: "sensitive", action: "RISK_SETTINGS_CHANGE" })` ile korunur (kapı ölçer); bu fonksiyon oturumu/TOTP'yi kendi denetlemez. */
 export async function writeRiskSettings(patch: SettingsPatch, by: string, deps: SettingsDeps = {}): Promise<WriteOutcome> {
-  const store = deps.store ?? prismaRiskSettingsStore();
-  let cur: RiskSettingsRow | null; try { cur = await store.read(); } catch (e) { return { ok: false, status: 503, reason: "STORE_UNAVAILABLE", errors: ["ayar okunamadı (" + errName(e) + ")"] }; }
-  if (cur === null) return { ok: false, status: 409, reason: "NO_ROW", errors: ["risk_settings satırı yok (id=1); göç uygulanmamış olabilir"] };
-  const v = validatePatch(cur, patch); if (!v.ok) return { ok: false, status: 400, reason: "INVALID", errors: v.errors };
-  try { await store.write(v.next, by, v.changes); } catch (e) { return { ok: false, status: 503, reason: "STORE_UNAVAILABLE", errors: ["ayar ya da E-1 defteri yazılamadı (" + errName(e) + ") — ayar DEĞİŞMEDİ"] }; }
+  const store = deps.store ?? prismaRiskSettingsStore(), lang = deps.lang ?? RECORD_LANG, W = srvFor(lang).risk.write;
+  let cur: RiskSettingsRow | null; try { cur = await store.read(); } catch (e) { return { ok: false, status: 503, reason: "STORE_UNAVAILABLE", errors: [fill(W.readFailed, { name: errName(e) })] }; }
+  if (cur === null) return { ok: false, status: 409, reason: "NO_ROW", errors: [W.noRow] };
+  const v = validatePatch(cur, patch, lang); if (!v.ok) return { ok: false, status: 400, reason: "INVALID", errors: v.errors };
+  try { await store.write(v.next, by, v.changes); } catch (e) { return { ok: false, status: 503, reason: "STORE_UNAVAILABLE", errors: [fill(W.writeFailed, { name: errName(e) })] }; }
   return { ok: true, next: v.next, changes: v.changes };
 }
 
@@ -153,19 +161,21 @@ const SHARE_RE = /^\d{1,3}(\.\d{1,3})?$/;
 const sameDec = (a: string | null, b: string | null) => (a === null || b === null ? a === b : new Prisma.Decimal(a).eq(new Prisma.Decimal(b)));
 export type SharesOutcome = { ok: true; next: RiskShares; changes: ShareChange[] } | { ok: false; errors: string[] };
 /** SAF. Gövde bütünüyle geçer ya da bütünüyle REDDEDİLİR. Hata metinleri İngilizce ve sayı ÖNERMEZ (yalnız kuralı söyler). */
-export function validateShares(cur: RiskShares, body: unknown): SharesOutcome {
-  if (body === null || typeof body !== "object" || Array.isArray(body)) return { ok: false, errors: ["the body must be a JSON object"] };
+// Tur 79: pay iletileri sözlükten (srv · shares). Tur 78'de İngilizce yazılmışlardı ⇒ dil verilmezse varsayılan EN (iç çıktı DEĞİŞMEDİ); uç isteğin dilini geçer.
+export function validateShares(cur: RiskShares, body: unknown, lang: string = "en"): SharesOutcome {
+  const E = srvFor(lang).shares.errors;
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return { ok: false, errors: [E.notObject] };
   const keys = Object.keys(body), errors: string[] = [], next: RiskShares = { ...cur };
-  for (const k of keys) if (!(SHARE_FIELDS as readonly string[]).includes(k)) errors.push(`unknown field: ${k} (allowed: ${SHARE_FIELDS.join(", ")})`);
-  if (keys.filter((k) => (SHARE_FIELDS as readonly string[]).includes(k)).length === 0) errors.push("no value sent: send singlePositionPct, totalExposurePct or both");
+  for (const k of keys) if (!(SHARE_FIELDS as readonly string[]).includes(k)) errors.push(fill(E.unknownField, { field: k, allowed: SHARE_FIELDS.join(", ") }));
+  if (keys.filter((k) => (SHARE_FIELDS as readonly string[]).includes(k)).length === 0) errors.push(E.noValue);
   for (const f of SHARE_FIELDS) { if (!(f in body)) continue; const v = (body as Record<string, unknown>)[f];
-    if (typeof v !== "number" || !Number.isFinite(v)) { errors.push(`${f} must be a number (percent), not ${v === null ? "null" : typeof v}`); continue; }
+    if (typeof v !== "number" || !Number.isFinite(v)) { errors.push(fill(E.notNumber, { field: f, type: v === null ? "null" : typeof v })); continue; }
     const s = String(v);
-    if (!SHARE_RE.test(s)) { errors.push(`${f} must have at most 3 digits before and 3 after the decimal point (the database column); nothing is rounded: ${s}`); continue; }
-    if (!(v > 0)) { errors.push(`${f} must be greater than 0: a share of 0 is read as "not set" and no position would open`); continue; }
+    if (!SHARE_RE.test(s)) { errors.push(fill(E.digits, { field: f, value: s })); continue; }
+    if (!(v > 0)) { errors.push(fill(E.notPositive, { field: f })); continue; }
     next[f] = s; }
   if (errors.length === 0 && next.singlePositionPct !== null && next.totalExposurePct !== null && new Prisma.Decimal(next.singlePositionPct).gt(new Prisma.Decimal(next.totalExposurePct)))
-    errors.push(`the single position share (${next.singlePositionPct}) may not be larger than the total exposure (${next.totalExposurePct}): the single share is the second, narrower limit`);
+    errors.push(fill(E.singleAboveTotal, { single: next.singlePositionPct, total: next.totalExposurePct }));
   if (errors.length) return { ok: false, errors };
   const changes: ShareChange[] = SHARE_FIELDS.filter((f) => !sameDec(cur[f], next[f])).map((f) => ({ field: LEDGER_FIELD[f], from: cur[f], to: next[f] as string }));
   return { ok: true, next, changes };
@@ -184,19 +194,20 @@ export const prismaRiskSharesStore = (client?: PrismaClient): SharesStore => { c
 }; };
 export type SharesRead = { ok: true; shares: RiskShares; rowExists: boolean } | { ok: false; detail: string };
 /** Okuma (GET). Fırlatmaz. Okunamazsa ok:false — "boş" SAYILMAZ (Ö-2). */
-export async function readRiskShares(deps: { store?: SharesStore } = {}): Promise<SharesRead> {
+export async function readRiskShares(deps: { store?: SharesStore; lang?: string } = {}): Promise<SharesRead> {
   const store = deps.store ?? prismaRiskSharesStore();
-  try { const r = await store.read(); return { ok: true, shares: r ?? { singlePositionPct: null, totalExposurePct: null }, rowExists: r !== null }; } catch (e) { return { ok: false, detail: "risk_profile could not be read (" + errName(e) + ")" }; }
+  try { const r = await store.read(); return { ok: true, shares: r ?? { singlePositionPct: null, totalExposurePct: null }, rowExists: r !== null }; } catch (e) { return { ok: false, detail: fill(srvFor(deps.lang ?? "en").shares.readFailed, { name: errName(e) }) }; }
 }
 export type SharesWrite = { ok: true; next: RiskShares; changes: ShareChange[] } | { ok: false; status: 400 | 503; reason: "INVALID" | "STORE_UNAVAILABLE"; errors: string[] };
 /** YAZMA: oku → doğrula → pay + defter AYNI işlemde. Uç `withAccess({ cls: "sensitive", action: "RISK_PROFILE_CHANGE" })` ile korunur (kapı ölçer); bu fonksiyon kodu kendi denetlemez.
  *  Değişiklik yoksa (aynı değerler) hiçbir şey yazılmaz — defter DEĞİŞİKLİK kaydıdır. */
-export async function writeRiskShares(body: unknown, by: string, deps: { store?: SharesStore } = {}): Promise<SharesWrite> {
+export async function writeRiskShares(body: unknown, by: string, deps: { store?: SharesStore; lang?: string } = {}): Promise<SharesWrite> {
+  const lang = deps.lang ?? "en", SH = srvFor(lang).shares;
   const store = deps.store ?? prismaRiskSharesStore();
-  let cur: RiskShares | null; try { cur = await store.read(); } catch (e) { return { ok: false, status: 503, reason: "STORE_UNAVAILABLE", errors: ["the risk shares could not be read (" + errName(e) + ") — nothing was changed"] }; }
-  const v = validateShares(cur ?? { singlePositionPct: null, totalExposurePct: null }, body); if (!v.ok) return { ok: false, status: 400, reason: "INVALID", errors: v.errors };
+  let cur: RiskShares | null; try { cur = await store.read(); } catch (e) { return { ok: false, status: 503, reason: "STORE_UNAVAILABLE", errors: [fill(SH.writeReadFailed, { name: errName(e) })] }; }
+  const v = validateShares(cur ?? { singlePositionPct: null, totalExposurePct: null }, body, lang); if (!v.ok) return { ok: false, status: 400, reason: "INVALID", errors: v.errors };
   if (v.changes.length === 0) return { ok: true, next: v.next, changes: [] };
-  try { await store.write(v.next, by, v.changes, cur === null); } catch (e) { return { ok: false, status: 503, reason: "STORE_UNAVAILABLE", errors: ["the risk shares or the change record could not be written (" + errName(e) + ") — nothing was changed"] }; }
+  try { await store.write(v.next, by, v.changes, cur === null); } catch (e) { return { ok: false, status: 503, reason: "STORE_UNAVAILABLE", errors: [fill(SH.writeFailed, { name: errName(e) })] }; }
   return { ok: true, next: v.next, changes: v.changes };
 }
 /** Kapı/kanarya deposu (S-9): `fail` okuma/yazmayı, `journalFail` yalnız defteri düşürür — ikisinde de pay DEĞİŞMEZ (işlem taklidi). */
