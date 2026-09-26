@@ -541,11 +541,12 @@ const CAPA_SEKMESI: Record<string, Sekme> = { "anahtar-bolumu": "settings", "tik
 function SekmeCubugu({ sekme, sec }: { sekme: Sekme; sec: (s: Sekme) => void }) {
   const tus = (e: React.KeyboardEvent<HTMLButtonElement>, i: number) => { const n = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0; if (n === 0) return; e.preventDefault();
     const hedef = SEKMELER[(i + n + SEKMELER.length) % SEKMELER.length]; sec(hedef); document.getElementById(`sekme-dugme-${hedef}`)?.focus(); };
+  // Tur 80: sekmeler içerik genişliğinde, satıra SIĞMAZSA alt satıra geçer (DE "Einstellungen" 390 px'te eşit dört sütunda kesiliyordu); sığan dilde tek satır, genişlik paylaşılır.
   return (
-    <div role="tablist" aria-label={T.tabs.label} style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: ".35rem", margin: "0 0 1rem" }}>
+    <div role="tablist" aria-label={T.tabs.label} style={{ display: "flex", flexWrap: "wrap", gap: ".35rem", margin: "0 0 1rem" }}>
       {SEKMELER.map((s, i) => (
         <button key={s} id={`sekme-dugme-${s}`} type="button" role="tab" aria-selected={sekme === s} aria-controls={`sekme-${s}`} tabIndex={sekme === s ? 0 : -1} onClick={() => sec(s)} onKeyDown={(e) => tus(e, i)}
-          style={{ minHeight: DOKUN, padding: ".4rem .3rem", borderRadius: 6, border: `1px solid ${sekme === s ? "#2b7fc9" : "#33333c"}`, background: sekme === s ? "#12354f" : "#141419", color: "#e8e8ea", cursor: "pointer", fontWeight: sekme === s ? 700 : 400, fontSize: ".95rem" }}>{T.tabs[s]}</button>))}
+          style={{ flex: "1 1 auto", minHeight: DOKUN, padding: ".4rem .6rem", borderRadius: 6, border: `1px solid ${sekme === s ? "#2b7fc9" : "#33333c"}`, background: sekme === s ? "#12354f" : "#141419", color: "#e8e8ea", cursor: "pointer", fontWeight: sekme === s ? 700 : 400, fontSize: ".95rem" }}>{T.tabs[s]}</button>))}
     </div>
   );
 }
@@ -798,10 +799,13 @@ export default function Panel() {
   // Boş alan GÖNDERİLMEZ (mevcut değer kalır). Dönüşüm yalnız virgülü noktaya çevirir, YUVARLAMAZ: biçim dışı sayıyı sunucu 400 ile reddeder ve sebebi ekrana gelir.
   const payAlanlari = () => [["singlePositionPct", payTek], ["totalExposurePct", payToplam]] as const;
   const paySayiDegil = payAlanlari().some(([, s]) => s.trim() !== "" && !Number.isFinite(Number(s.trim().replace(",", "."))));
+  // Tur 80 (S9-3, iş sahibi kararı 26 Eyl [B]): Batı rakamı DIŞINDAKİ her ondalık rakam (Arapça-Hint ٠–٩, Farsça ۰–۹ …) ya da Arapça ondalık/binlik ayırıcı (٫ ٬) — `Number()` bunları
+  //   zaten sayı saymaz (SAYI DEĞİL, gönderilmez): kabul/ret kümesi DEĞİŞMEZ, dönüştürücü YOK; yalnız ret iletisi "Batı rakamıyla yaz" der (caps.notWesternDigits).
+  const payBatiDisi = payAlanlari().some(([, s]) => /[^\P{Nd}0-9]|[٫٬]/u.test(s));
   const payGovde = (): Record<string, number> => Object.fromEntries(payAlanlari().filter(([, s]) => s.trim() !== "").map(([k, s]) => [k, Number(s.trim().replace(",", "."))]));
   const payHazir = payAlanlari().some(([, s]) => s.trim() !== "") && /^\d{6}$/.test(payKod) && !payGonderiliyor;
   const payUygula = async () => {
-    if (paySayiDegil) { setPaySonuc(T.caps.notNumber); return; }
+    if (paySayiDegil) { setPaySonuc(payBatiDisi ? T.caps.notWesternDigits : T.caps.notNumber); return; }
     setPayGonderiliyor(true); setPaySonuc(null); let r: Response | null = null;
     try { r = await fetch("/api/risk/shares", { method: "POST", headers: { "content-type": "application/json", "x-totp-code": payKod }, body: JSON.stringify(payGovde()) }); } catch { r = null; }
     const b = r ? ((await r.json().catch(() => ({}))) as { ok?: boolean; applied?: { field: string; from: string | null; to: string | null }[]; errors?: string[] }) : {};

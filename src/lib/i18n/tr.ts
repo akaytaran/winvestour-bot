@@ -376,6 +376,7 @@ export const TR = {
     same: "Hiçbir şey değişmedi: gönderdiğin değerler şu anki değerler.",
     rejected403: "Kaydedilmedi: tek kullanımlık kod eksik, yanlış ya da daha önce kullanılmış. Risk paylarının her değişikliği yeni bir kod ister.",
     notNumber: "Kaydedilmedi: bir sayı yaz (ondalık için nokta ya da virgül kullan).",
+    notWesternDigits: "Kaydedilmedi: sayıyı Batı rakamlarıyla yaz (standart Latin klavyenin rakamları); Arapça-Hint rakamları gibi başka rakam biçimleri kabul edilmez. Ondalık için nokta ya da virgül kullan.",
     formUnreadable: "Şu anki risk payları okunamadı, bu yüzden şimdi değiştirilemez. Sayfayı yeniden oku.",
     historyGroup: "Risk payları",
   },

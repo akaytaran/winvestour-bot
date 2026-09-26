@@ -385,6 +385,8 @@ export const EN = {
     same: "Nothing changed: the values you sent are the current ones.",
     rejected403: "Not saved: the one-time code was missing, wrong or already used. Every change of the risk shares needs a new code.",
     notNumber: "Not saved: type a number (use a dot or a comma for decimals).",
+    // Tur 80 (S9-3): girişte Batı rakamı DIŞINDA rakam (Arapça-Hint, Farsça …) ya da Arapça ayırıcı varsa — kabul/ret kümesi aynı, yalnız ileti.
+    notWesternDigits: "Not saved: write the number with Western digits (the digits of a standard Latin keyboard); other digit forms, such as Arabic-Indic digits, are not accepted. Use a dot or a comma for decimals.",
     formUnreadable: "The current risk shares could not be read, so they cannot be changed now. Read the page again.",
     historyGroup: "Risk shares",
   },

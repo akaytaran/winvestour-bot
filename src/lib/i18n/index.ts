@@ -7,10 +7,14 @@
 import { EN, type Dict } from "./en";
 import { TR } from "./tr";
 import { AR } from "./ar";
+import { DE } from "./de";
+import { RU } from "./ru";
+import { IT } from "./it";
+import { FR } from "./fr";
 import { LANGS, type Lang } from "./langs";
 
-// Tur 79 (G34 parça 1): en · tr · ar. Parça 2 (de · ru · it · fr) sözlükleri buraya eklenir; seçici yalnız sözlüğü OLAN dilleri sunar.
-const RAW: Partial<Record<Lang, unknown>> = { en: EN, tr: TR, ar: AR };
+// Tur 79 (G34 parça 1): en · tr · ar · Tur 80 (G34 parça 2/2): de · ru · it · fr ⇒ hedefin YEDİ dili (gate:i18n (9c) bekleyen dil 0). Seçici yalnız sözlüğü OLAN dilleri sunar.
+const RAW: Partial<Record<Lang, unknown>> = { en: EN, tr: TR, de: DE, ru: RU, it: IT, fr: FR, ar: AR };
 /** Sözlüğü OLAN diller (hedefin alt kümesi; sıra LANGS sırası). Seçici yalnız bunları sunar. */
 export const AVAILABLE: readonly Lang[] = LANGS.filter((l) => RAW[l] !== undefined);
 const ph = (s: string) => [...s.matchAll(/\{([a-zA-Z][a-zA-Z0-9]*)\}/g)].map((m) => m[1]).sort().join(",");

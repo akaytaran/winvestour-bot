@@ -6,8 +6,12 @@ import type { Lang } from "../langs";
 import { EN_SRV, type SrvDict } from "./en";
 import { TR_SRV } from "./tr";
 import { AR_SRV } from "./ar";
+import { DE_SRV } from "./de";
+import { RU_SRV } from "./ru";
+import { IT_SRV } from "./it";
+import { FR_SRV } from "./fr";
 
-const RAW: Partial<Record<Lang, unknown>> = { en: EN_SRV, tr: TR_SRV, ar: AR_SRV };
+const RAW: Partial<Record<Lang, unknown>> = { en: EN_SRV, tr: TR_SRV, de: DE_SRV, ru: RU_SRV, it: IT_SRV, fr: FR_SRV, ar: AR_SRV }; // Tur 80: yedi dil
 /** Sunucu sözlüğü olan diller — istemci sözlüğünün dilleriyle AYNI olmak zorunda (gate:i18n (9)). */
 export const SRV_AVAILABLE: readonly Lang[] = AVAILABLE.filter((l) => RAW[l] !== undefined);
 /** İç kayıt dili (dil parametresi verilmeyen iç çağrılar). */
