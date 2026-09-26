@@ -14,7 +14,9 @@ export const preferredRegion = "hnd1";
 const view = async () => {
   const r = await readRiskShares();
   if (!r.ok) return { ok: false as const, reason: "RISK_SHARES_UNREADABLE", detail: r.detail, note: EN.api.riskSharesUnreadable };
-  const changes = await prismaRiskSharesStore().changes(10).catch(() => null), shown = (v: string | null) => v ?? EN.common.notSet;
+  // Defter okunamazsa changes = null ("boş" SAYILMAZ, ekran bunu ayırır). Tur 78 gerilemesi: .catch(() => null) biçimi gate:events silent-catch kuralına takıldı — hata açıkça dala çevrildi.
+  let changes: Awaited<ReturnType<ReturnType<typeof prismaRiskSharesStore>["changes"]>> | null; try { changes = await prismaRiskSharesStore().changes(10); } catch { changes = null; }
+  const shown = (v: string | null) => v ?? EN.common.notSet;
   return { ok: true as const, shares: r.shares, text: { singlePositionPct: shown(r.shares.singlePositionPct), totalExposurePct: shown(r.shares.totalExposurePct) }, rowExists: r.rowExists,
     note: EN.api.riskSharesNote, changes: changes === null ? null : changes.map((c) => ({ at: c.at.toISOString(), by: c.by, changes: c.changes })) };
 };

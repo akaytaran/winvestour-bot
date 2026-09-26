@@ -661,7 +661,7 @@ export default function Panel() {
   const load = useCallback(async () => {
     try {
       const [p, s, k, g, x] = await Promise.all([fetch("/api/panel", { cache: "no-store" }), fetch("/api/brain/settings", { cache: "no-store" }), fetch("/api/risk/settings", { cache: "no-store" }), fetch("/api/entry/settings", { cache: "no-store" }), fetch("/api/exchange-key", { cache: "no-store" })]);
-      const y = await fetch("/api/risk/shares", { cache: "no-store" }).catch(() => null); // Tur 78: pay defteri (değerler /api/panel'den de gelir; ön koşul onları okur)
+      let y: Response | null; try { y = await fetch("/api/risk/shares", { cache: "no-store" }); } catch { y = null; } // Tur 78: pay defteri (değerler /api/panel'den de gelir; ön koşul onları okur)
       if (p.status === 401 || s.status === 401 || k.status === 401) { setState("oturumsuz"); return; }
       setView(p.ok ? ((await p.json()) as PanelView) : null);
       setSettings((await s.json()) as Settings);
