@@ -33,7 +33,8 @@ export const prismaRiskSettingsStore = (client?: PrismaClient): SettingsStore =>
     db().riskSettings.update({ where: { id: 1 }, data: { leverageCap: next.leverageCap, futuresEnabled: next.futuresEnabled, shortMode: next.shortMode, m2FuturesMultiple: next.m2FuturesMultiple } }),
     db().riskSettingChange.create({ data: { by, changes: changes as unknown as Prisma.InputJsonValue } }),
   ]); },
-  changes: async (n) => (await db().riskSettingChange.findMany({ orderBy: { at: "desc" }, take: n })).map((c) => ({ at: c.at, by: c.by, changes: c.changes as unknown as SettingChange[] })),
+  // Tur 78: aynı E-1 defterine risk PAYI satırları da yazılır (aşağıda) — bu ayarın okuması onları DIŞARIDA bırakır ⇒ `/api/risk/settings` yanıtı Tur 77'dekiyle aynı içerikte kalır.
+  changes: async (n) => (await db().riskSettingChange.findMany({ where: { NOT: SHARE_LEDGER_FILTER }, orderBy: { at: "desc" }, take: n })).map((c) => ({ at: c.at, by: c.by, changes: c.changes as unknown as SettingChange[] })),
 }; };
 /** Kapı/kanarya deposu (S-9): `fail` okuma/yazmayı düşürür, `journalFail` yalnız defteri — ikisinde de ayar DEĞİŞMEZ (işlem taklidi). */
 export function memoryRiskSettingsStore(row: RiskSettingsRow | null = null): SettingsStore & { row: RiskSettingsRow | null; log: { at: Date; by: string; changes: SettingChange[] }[]; fail: boolean; journalFail: boolean } {
@@ -132,4 +133,78 @@ export async function writeRiskSettings(patch: SettingsPatch, by: string, deps: 
   const v = validatePatch(cur, patch); if (!v.ok) return { ok: false, status: 400, reason: "INVALID", errors: v.errors };
   try { await store.write(v.next, by, v.changes); } catch (e) { return { ok: false, status: 503, reason: "STORE_UNAVAILABLE", errors: ["ayar ya da E-1 defteri yazılamadı (" + errName(e) + ") — ayar DEĞİŞMEDİ"] }; }
   return { ok: true, next: v.next, changes: v.changes };
+}
+
+// ---- RİSK PAYLARI: TEK POZİSYON PAYI + TOPLAM MARUZİYET (Tur 78 · G33 · K-9, A-1/A-6, S-8, Ö-3, U-3) ----
+// Yer: `risk_profile` id=1 (`max_single_position_pct`, `max_total_exposure_pct`). Okuyucular (edge/sizing/panel) DEĞİŞMEDİ; bu bölüm yalnız YAZMA yolunu ve onun E-1 defterini ekler.
+// Defter: `risk_setting_changes` (E-1 risk defteri; tek okuma/yazma yolu kuralı gereği bu dosyada). Alan adları `maxSinglePositionPct` / `maxTotalExposurePct`; `/api/risk/settings` bu satırları görmez.
+// BU BÖLÜMDE SAYI YOKTUR ve HİÇBİR DEĞER ÖNERİLMEZ (A-1/A-6: sayı iş sahibinindir): varsayılan, tohum, örnek yok. Satır yoksa YALNIZ gönderilen değerle oluşur; gönderilmeyen alan NULL kalır.
+// SINIRLAR YALNIZ YAZILI KAYNAKTAN — (1) > 0: okuyucular (`edge.judgeExposure`, `sizing.planPositionSize`) pozitif olmayan payı "yok" sayar ⇒ yazılsa kapalı arıza olurdu;
+//   (2) sütun DECIMAL(6,3): en çok 3 tam + 3 ondalık hane — fazlası REDDEDİLİR, yuvarlanmaz/kırpılmaz (Ö-3); (3) K-9 "tek pozisyon payı ikinci ve DAHA DAR sınır": iki değer de
+//   biliniyorsa tek pay ≤ toplam. Belgede olmayan bir üst sınır (ör. yüzde yüz) İCAT EDİLMEDİ. NULL'a geri çekme bu turda YOK (null → 400).
+export const SHARE_FIELDS = ["singlePositionPct", "totalExposurePct"] as const;
+export type ShareField = (typeof SHARE_FIELDS)[number];
+export type RiskShares = { singlePositionPct: string | null; totalExposurePct: string | null };
+export type ShareChange = { field: "maxSinglePositionPct" | "maxTotalExposurePct"; from: string | null; to: string };
+const LEDGER_FIELD = { singlePositionPct: "maxSinglePositionPct", totalExposurePct: "maxTotalExposurePct" } as const;
+/** Defterde pay satırlarını ayıran süzgeç (jsonb @>): alan adlarından biri geçen satır pay satırıdır. */
+const SHARE_LEDGER_FILTER = { OR: [{ changes: { array_contains: [{ field: "maxSinglePositionPct" }] } }, { changes: { array_contains: [{ field: "maxTotalExposurePct" }] } }] };
+const SHARE_RE = /^\d{1,3}(\.\d{1,3})?$/;
+const sameDec = (a: string | null, b: string | null) => (a === null || b === null ? a === b : new Prisma.Decimal(a).eq(new Prisma.Decimal(b)));
+export type SharesOutcome = { ok: true; next: RiskShares; changes: ShareChange[] } | { ok: false; errors: string[] };
+/** SAF. Gövde bütünüyle geçer ya da bütünüyle REDDEDİLİR. Hata metinleri İngilizce ve sayı ÖNERMEZ (yalnız kuralı söyler). */
+export function validateShares(cur: RiskShares, body: unknown): SharesOutcome {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return { ok: false, errors: ["the body must be a JSON object"] };
+  const keys = Object.keys(body), errors: string[] = [], next: RiskShares = { ...cur };
+  for (const k of keys) if (!(SHARE_FIELDS as readonly string[]).includes(k)) errors.push(`unknown field: ${k} (allowed: ${SHARE_FIELDS.join(", ")})`);
+  if (keys.filter((k) => (SHARE_FIELDS as readonly string[]).includes(k)).length === 0) errors.push("no value sent: send singlePositionPct, totalExposurePct or both");
+  for (const f of SHARE_FIELDS) { if (!(f in body)) continue; const v = (body as Record<string, unknown>)[f];
+    if (typeof v !== "number" || !Number.isFinite(v)) { errors.push(`${f} must be a number (percent), not ${v === null ? "null" : typeof v}`); continue; }
+    const s = String(v);
+    if (!SHARE_RE.test(s)) { errors.push(`${f} must have at most 3 digits before and 3 after the decimal point (the database column); nothing is rounded: ${s}`); continue; }
+    if (!(v > 0)) { errors.push(`${f} must be greater than 0: a share of 0 is read as "not set" and no position would open`); continue; }
+    next[f] = s; }
+  if (errors.length === 0 && next.singlePositionPct !== null && next.totalExposurePct !== null && new Prisma.Decimal(next.singlePositionPct).gt(new Prisma.Decimal(next.totalExposurePct)))
+    errors.push(`the single position share (${next.singlePositionPct}) may not be larger than the total exposure (${next.totalExposurePct}): the single share is the second, narrower limit`);
+  if (errors.length) return { ok: false, errors };
+  const changes: ShareChange[] = SHARE_FIELDS.filter((f) => !sameDec(cur[f], next[f])).map((f) => ({ field: LEDGER_FIELD[f], from: cur[f], to: next[f] as string }));
+  return { ok: true, next, changes };
+}
+export interface SharesStore { read(): Promise<RiskShares | null>; write(next: RiskShares, by: string, changes: ShareChange[], createRow: boolean): Promise<void>; changes(n: number): Promise<{ at: Date; by: string; changes: ShareChange[] }[]> }
+const decStr = (x: unknown) => (x === null || x === undefined ? null : String(x));
+/** Neon deposu. PAY YAZIMI VE DEFTER AYNI İŞLEMDE (E-1): defter yazılamazsa pay da yazılmaz. `createRow` = satır yoktu ⇒ YALNIZ gönderilen değerlerle oluşturulur (varsayılan yok). */
+export const prismaRiskSharesStore = (client?: PrismaClient): SharesStore => { const db = () => client ?? getDb(); return {
+  read: async () => { const r = await db().riskProfile.findUnique({ where: { id: 1 }, select: { maxSinglePositionPct: true, maxTotalExposurePct: true } }); return r ? { singlePositionPct: decStr(r.maxSinglePositionPct), totalExposurePct: decStr(r.maxTotalExposurePct) } : null; },
+  write: async (next, by, changes, createRow) => { const data = { maxSinglePositionPct: next.singlePositionPct, maxTotalExposurePct: next.totalExposurePct };
+    await db().$transaction([
+      createRow ? db().riskProfile.create({ data: { id: 1, ...data } }) : db().riskProfile.update({ where: { id: 1 }, data }),
+      db().riskSettingChange.create({ data: { by, changes: changes as unknown as Prisma.InputJsonValue } }),
+    ]); },
+  changes: async (n) => (await db().riskSettingChange.findMany({ where: SHARE_LEDGER_FILTER, orderBy: { at: "desc" }, take: n })).map((c) => ({ at: c.at, by: c.by, changes: c.changes as unknown as ShareChange[] })),
+}; };
+export type SharesRead = { ok: true; shares: RiskShares; rowExists: boolean } | { ok: false; detail: string };
+/** Okuma (GET). Fırlatmaz. Okunamazsa ok:false — "boş" SAYILMAZ (Ö-2). */
+export async function readRiskShares(deps: { store?: SharesStore } = {}): Promise<SharesRead> {
+  const store = deps.store ?? prismaRiskSharesStore();
+  try { const r = await store.read(); return { ok: true, shares: r ?? { singlePositionPct: null, totalExposurePct: null }, rowExists: r !== null }; } catch (e) { return { ok: false, detail: "risk_profile could not be read (" + errName(e) + ")" }; }
+}
+export type SharesWrite = { ok: true; next: RiskShares; changes: ShareChange[] } | { ok: false; status: 400 | 503; reason: "INVALID" | "STORE_UNAVAILABLE"; errors: string[] };
+/** YAZMA: oku → doğrula → pay + defter AYNI işlemde. Uç `withAccess({ cls: "sensitive", action: "RISK_PROFILE_CHANGE" })` ile korunur (kapı ölçer); bu fonksiyon kodu kendi denetlemez.
+ *  Değişiklik yoksa (aynı değerler) hiçbir şey yazılmaz — defter DEĞİŞİKLİK kaydıdır. */
+export async function writeRiskShares(body: unknown, by: string, deps: { store?: SharesStore } = {}): Promise<SharesWrite> {
+  const store = deps.store ?? prismaRiskSharesStore();
+  let cur: RiskShares | null; try { cur = await store.read(); } catch (e) { return { ok: false, status: 503, reason: "STORE_UNAVAILABLE", errors: ["the risk shares could not be read (" + errName(e) + ") — nothing was changed"] }; }
+  const v = validateShares(cur ?? { singlePositionPct: null, totalExposurePct: null }, body); if (!v.ok) return { ok: false, status: 400, reason: "INVALID", errors: v.errors };
+  if (v.changes.length === 0) return { ok: true, next: v.next, changes: [] };
+  try { await store.write(v.next, by, v.changes, cur === null); } catch (e) { return { ok: false, status: 503, reason: "STORE_UNAVAILABLE", errors: ["the risk shares or the change record could not be written (" + errName(e) + ") — nothing was changed"] }; }
+  return { ok: true, next: v.next, changes: v.changes };
+}
+/** Kapı/kanarya deposu (S-9): `fail` okuma/yazmayı, `journalFail` yalnız defteri düşürür — ikisinde de pay DEĞİŞMEZ (işlem taklidi). */
+export function memoryRiskSharesStore(row: RiskShares | null = null): SharesStore & { row: RiskShares | null; log: { at: Date; by: string; changes: ShareChange[] }[]; fail: boolean; journalFail: boolean } {
+  const s = { row, log: [] as { at: Date; by: string; changes: ShareChange[] }[], fail: false, journalFail: false };
+  return Object.assign(s, {
+    read: async () => { if (s.fail) throw new Error("risk-shares-store-down"); return s.row; },
+    write: async (next: RiskShares, by: string, changes: ShareChange[]) => { if (s.fail) throw new Error("risk-shares-store-down"); if (s.journalFail) throw new Error("risk-shares-journal-down"); s.row = next; s.log.unshift({ at: new Date(), by, changes }); },
+    changes: async (n: number) => s.log.slice(0, n),
+  });
 }

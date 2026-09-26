@@ -7,6 +7,8 @@
 //   gizli sekme SÖKÜLMEZ (`hidden`), çapalar ve kanaryaların ölçtüğü öğeler DOM'da kalır. Ham kod, ham hata metni ve test verisi ekrana ÇIKMAZ (U-3, U-5).
 // RİSK AYARI YÜZEYİ (Tur 37 madde 4-5): ekran ayarın TEK OKUMA YOLUNU (`/api/risk/settings`) okur; kip listesini uçtan ALIR — kip adı, kaldıraç sayısı ya da eşik SABİTİ YOKTUR (kapı: gate:ui).
 //   Değiştirme yüzeyi S-8'e uyar: oturum + eylem başına TOTP; varsayılan doldurulmuş değer YOK, otomatik gönderim YOK, hiçbir alan kendiliğinden yamaya girmez.
+// RİSK PAYLARI (Tur 78 · G33 · K-9, S-8, A-1/A-6): tek pozisyon payı + toplam maruziyet Settings'teki bölümden GET/POST /api/risk/shares ile okunur/yazılır (her kaydetme kod ister).
+//   Alanlar BOŞ başlar, placeholder/örnek/varsayılan sayı YOKTUR (sayı sahibinindir); boş alan gönderilmez; sonuç sunucudan YENİDEN okunur. Ön koşul "First: …" bağlantısı bu bölüme gider.
 // KOD ALANLARI (Tur 77, Tur 76 tam denetim notu): 6 haneli TOTP alanlarının HEPSİ `autoComplete="one-time-code"` (WHATWG'nin tek kullanımlık kod belirteci: telefonun parola yöneticisi
 //   o anki kodu önerebilir; kod 30 s geçerli ve sunucu aynı kodu ikinci kez kabul etmez). SIR alanları (durdurma anahtarı, özel anahtar) `off` kalır.
 import { useCallback, useEffect, useState } from "react";
@@ -39,6 +41,9 @@ const RISK_ALANLARI = [
   { alan: "m2FuturesMultiple", ad: T.risk.fields.m2FuturesMultiple, tip: "ondalık" },
 ] as const;
 const RISK_ADI: Record<string, string> = Object.fromEntries(RISK_ALANLARI.map((f) => [f.alan, f.ad]));
+/** Tur 78: risk payı defter alanlarının ekrandaki adı (uç alan adı → sözlük). */
+const PAY_ADI: Record<string, string> = { maxSinglePositionPct: T.prereq.names.single, maxTotalExposurePct: T.prereq.names.total };
+type SharesView = { ok: boolean; shares?: { singlePositionPct: string | null; totalExposurePct: string | null }; changes?: Defter[] | null };
 /** TAVAN SEÇİLMEDEN "AÇIK" SEÇENEĞİ SUNULMAZ (Tur 38 madde 2a · üretim kararı `winvestor-panel-tavansiz-acik-secenegi` = B · U-3, K-11). Etkin tavan: bu yamada tavan
  *  alanı işaretliyse yazılan değer (boş = seçimi kaldır ⇒ tavan YOK), işaretli değilse kayıtlı ayar. Bu bir YÜZEY savunmasıdır: sunucu reddi AYNEN kalır (validatePatch, 400 INVALID). */
 const tavanVar = (r: RiskView, secili: Record<string, boolean>, deger: Record<string, string>) =>
@@ -459,10 +464,10 @@ function onKosullar(a: { anahtar: KeyView | null; settings: Settings | null; gir
       : { k: "tavan", durum: "tamam", cumle: cc.totalUsd === null ? (cc.behavior === "NO_LIMIT" ? P.capOkNoLimit : P.capOkBrain) : fill(P.capOkTotal, { amount: fmt.usdMonth(cc.totalUsd) }) });
     rows.push(altyapiEksik ? { k: "altyapi", durum: "eksik", cumle: P.infraMissing, href: "#maliyet-tavani", bag: P.infraFix }
       : { k: "altyapi", durum: "tamam", cumle: cc.infraUsd === null ? P.infraNotNeeded : fill(P.infraOk, { amount: fmt.usdMonth(cc.infraUsd) }) }); }
-  const pay = (k: string, ad: string, v: string | null | undefined): Kosul => !rc.ok ? oku(k, ad, "#risk-paylari")
+  const pay = (k: string, ad: string, v: string | null | undefined, duzelt: string): Kosul => !rc.ok ? oku(k, ad, "#risk-paylari")
     : v !== null && v !== undefined ? { k, durum: "tamam", cumle: fill(P.shareOk, { name: ad, value: yuzde(v) }) }
-    : { k, durum: "eksik", cumle: fill(P.shareMissing, { name: ad }), href: "#risk-paylari", bag: fill(P.goTo, { name: ad }) };
-  rows.push(pay("tek-pay", N.single, rc.ok ? rc.singlePct : null), pay("toplam-pay", N.total, rc.ok ? rc.totalPct : null));
+    : { k, durum: "eksik", cumle: fill(P.shareMissing, { name: ad }), href: "#risk-paylari", bag: duzelt };
+  rows.push(pay("tek-pay", N.single, rc.ok ? rc.singlePct : null, P.singleFix), pay("toplam-pay", N.total, rc.ok ? rc.totalPct : null, P.totalFix));
   rows.push(!a.giris?.ok ? { k: "giris", durum: "bilgi", cumle: P.entryUnreadable, href: "#giris-salteri", bag: fill(P.goTo, { name: N.entry }) }
     : a.giris.enabled ? { k: "giris", durum: "bilgi", cumle: P.entryOn, href: "#giris-salteri", bag: fill(P.goTo, { name: N.entry }) }
     : { k: "giris", durum: "bilgi", cumle: P.entryOff, href: "#giris-salteri", bag: fill(P.goTo, { name: N.entry }) });
@@ -566,16 +571,16 @@ function DurumOzeti({ v, simdi }: { v: PanelView; simdi: number }) {
     <p style={{ margin: ".4rem 0 0", color: "#9a9aa2" }}>{fill(S.reloaded, { at: anTr(v.at) })}</p></section>);
 }
 /** GEÇMİŞ SEKMESİ: pozisyonlar ve ayar değişiklikleri sade satırlarla — MEVCUT veriden (yeni sorgu/uç YOK). */
-function GecmisSekmesi({ v, settings, risk }: { v: PanelView; settings: Settings | null; risk: RiskView | null }) {
+function GecmisSekmesi({ v, settings, risk, paylar }: { v: PanelView; settings: Settings | null; risk: RiskView | null; paylar: SharesView | null }) {
   const H = T.history, simdi = Date.parse(v.at);
   const para = (x: string | null) => (x === null ? T.common.unknown : fmt.usdt(x));
   const pozisyon = (p: PositionView) => p.open
     ? fill(H.open, { symbol: p.symbol, opened: `${anTr(p.openedAt)} (${fmt.ago(p.openedAt, simdi)})`, qty: p.facts.quantity, entry: fmt.usdt(p.facts.entryPrice), notional: fmt.usdt(p.facts.notionalUsdt), fee: fmt.usdt(p.facts.feeUsdt),
         pnl: p.facts.grossUsdt === null ? H.openPnlUnknown : fill(H.openPnl, { gross: para(p.facts.grossUsdt), net: para(p.facts.netUsdt) }) })
     : fill(H.closed, { symbol: p.symbol, closed: p.closedAt === null ? H.closedUnknownTime : anTr(p.closedAt), opened: anTr(p.openedAt), gross: para(p.facts.grossUsdt), fee: fmt.usdt(p.facts.feeUsdt), net: para(p.facts.netUsdt), reason: sebepAdi(p.reasonCode) });
-  const alanAdi: Record<string, string> = { ...(T.cap.fieldNames as Record<string, string>), ...(T.brain.fieldNames as Record<string, string>), ...RISK_ADI, tickMs: T.prereq.names.tick };
-  const degerYaz = (f: string, x: string | null) => (x === null ? T.common.nowUnset : f === "callIntervalMs" || f === "tickMs" ? fmt.every(Number(x)) : defterDegeri(f, x));
-  const degisiklikler = [...(settings?.changes ?? []).map((c) => ({ ...c, grup: H.brainGroup })), ...(risk?.ok ? risk.changes ?? [] : []).map((c) => ({ ...c, grup: H.riskGroup }))]
+  const alanAdi: Record<string, string> = { ...(T.cap.fieldNames as Record<string, string>), ...(T.brain.fieldNames as Record<string, string>), ...RISK_ADI, ...PAY_ADI, tickMs: T.prereq.names.tick };
+  const degerYaz = (f: string, x: string | null) => (x === null ? T.common.nowUnset : f === "callIntervalMs" || f === "tickMs" ? fmt.every(Number(x)) : PAY_ADI[f] ? yuzde(x) : defterDegeri(f, x));
+  const degisiklikler = [...(settings?.changes ?? []).map((c) => ({ ...c, grup: H.brainGroup })), ...(risk?.ok ? risk.changes ?? [] : []).map((c) => ({ ...c, grup: H.riskGroup })), ...(paylar?.ok ? paylar.changes ?? [] : []).map((c) => ({ ...c, grup: T.caps.historyGroup }))]
     .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   const ls = v.summary.lastStop, sonOlay = !ls.read ? T.common.unknown : ls.at === null ? H.lastStopNone : fill(H.lastStop, { at: anTr(ls.at), title: sebepAdi(ls.code) });
   return (<div>
@@ -631,6 +636,13 @@ export default function Panel() {
   const [riskDeger, setRiskDeger] = useState<Record<string, string>>({});
   const [riskTotp, setRiskTotp] = useState("");
   const [riskSonuc, setRiskSonuc] = useState<string | null>(null);
+  // Tur 78 (G33): risk payları — iki alan BOŞ başlar (kullanıcı yazmadıkça doldurulmaz), kod her kaydetmede yeniden istenir.
+  const [paylar, setPaylar] = useState<SharesView | null>(null);
+  const [payTek, setPayTek] = useState("");
+  const [payToplam, setPayToplam] = useState("");
+  const [payKod, setPayKod] = useState("");
+  const [paySonuc, setPaySonuc] = useState<string | null>(null);
+  const [payGonderiliyor, setPayGonderiliyor] = useState(false);
   const [kilit, setKilit] = useState<LockState | "CHECKING" | "ACIK">("CHECKING");
   const [kilitAyar, setKilitAyar] = useState<LockRead | null>(null);
   const [kilitNot, setKilitNot] = useState<string | null>(null);
@@ -649,12 +661,14 @@ export default function Panel() {
   const load = useCallback(async () => {
     try {
       const [p, s, k, g, x] = await Promise.all([fetch("/api/panel", { cache: "no-store" }), fetch("/api/brain/settings", { cache: "no-store" }), fetch("/api/risk/settings", { cache: "no-store" }), fetch("/api/entry/settings", { cache: "no-store" }), fetch("/api/exchange-key", { cache: "no-store" })]);
+      const y = await fetch("/api/risk/shares", { cache: "no-store" }).catch(() => null); // Tur 78: pay defteri (değerler /api/panel'den de gelir; ön koşul onları okur)
       if (p.status === 401 || s.status === 401 || k.status === 401) { setState("oturumsuz"); return; }
       setView(p.ok ? ((await p.json()) as PanelView) : null);
       setSettings((await s.json()) as Settings);
       setRisk((await k.json().catch(() => ({ ok: false }))) as RiskView);
       setGiris((await g.json().catch(() => ({ ok: false }))) as EntryView);
       setAnahtar((await x.json().catch(() => ({ ok: false }))) as KeyView);
+      setPaylar(y ? ((await y.json().catch(() => ({ ok: false }))) as SharesView) : { ok: false });
       setState(p.ok ? "hazır" : "ulaşılamadı");
     } catch { setState("ulaşılamadı"); }
   }, []);
@@ -677,7 +691,7 @@ export default function Panel() {
   // Çıkış: mevcut POST /api/auth/logout (çerezi düşürür). Başarısızsa ekran oturumlu kalır ve bunu söyler — çerez tarayıcıda kalmış olabilir.
   const cikis = async () => { let ok = false; try { ok = (await fetch("/api/auth/logout", { method: "POST", cache: "no-store" })).ok; } catch { ok = false; }
     if (!ok) { setCikisHata(T.panel.signOutFailed); return; }
-    setCikisHata(null); setView(null); setSettings(null); setRisk(null); setGiris(null); setAnahtar(null); setCikisNot(T.panel.signedOut); setState("oturumsuz"); };
+    setCikisHata(null); setView(null); setSettings(null); setRisk(null); setGiris(null); setAnahtar(null); setPaylar(null); setCikisNot(T.panel.signedOut); setState("oturumsuz"); };
   const kilidiAc = async () => { if (await unlock()) { setKilitNot(null); setKilit("ACIK"); await load(); } else setKilitNot(LOCK_TEXT.FAILED); };
   const tanit = async () => setKilitNot(await enroll() ? T.lock.enrolled : LOCK_TEXT.ENROLL_FAILED);
 
@@ -772,6 +786,23 @@ export default function Panel() {
     setRiskSonuc(r.ok && b.ok ? fill(T.risk.applied, { changes: (b.applied ?? []).map((c) => `${RISK_ADI[c.field] ?? T.history.unknownField} ${c.from === null ? T.common.wasUnset : defterDegeri(c.field, c.from)} → ${defterDegeri(c.field, c.to)}`).join(", ") || T.common.noFieldChanged })
       : sonucMetni(r.status, (b.errors ?? []).join(" · "), T.risk.rejected403));
     setRiskTotp(""); setRiskSecili({}); setRiskDeger({}); await load();
+  };
+
+  // ---- RİSK PAYLARINI YAZ (Tur 78 · G33 · S-8, A-1/A-6) ----
+  // Boş alan GÖNDERİLMEZ (mevcut değer kalır). Dönüşüm yalnız virgülü noktaya çevirir, YUVARLAMAZ: biçim dışı sayıyı sunucu 400 ile reddeder ve sebebi ekrana gelir.
+  const payAlanlari = () => [["singlePositionPct", payTek], ["totalExposurePct", payToplam]] as const;
+  const paySayiDegil = payAlanlari().some(([, s]) => s.trim() !== "" && !Number.isFinite(Number(s.trim().replace(",", "."))));
+  const payGovde = (): Record<string, number> => Object.fromEntries(payAlanlari().filter(([, s]) => s.trim() !== "").map(([k, s]) => [k, Number(s.trim().replace(",", "."))]));
+  const payHazir = payAlanlari().some(([, s]) => s.trim() !== "") && /^\d{6}$/.test(payKod) && !payGonderiliyor;
+  const payUygula = async () => {
+    if (paySayiDegil) { setPaySonuc(T.caps.notNumber); return; }
+    setPayGonderiliyor(true); setPaySonuc(null); let r: Response | null = null;
+    try { r = await fetch("/api/risk/shares", { method: "POST", headers: { "content-type": "application/json", "x-totp-code": payKod }, body: JSON.stringify(payGovde()) }); } catch { r = null; }
+    const b = r ? ((await r.json().catch(() => ({}))) as { ok?: boolean; applied?: { field: string; from: string | null; to: string | null }[]; errors?: string[] }) : {};
+    setPaySonuc(r === null ? T.panel.unreachable : r.ok && b.ok ? ((b.applied ?? []).length === 0 ? T.caps.same : fill(T.caps.applied, { changes: (b.applied ?? []).map((c) => `${PAY_ADI[c.field] ?? T.history.unknownField} ${c.from === null ? T.common.wasUnset : yuzde(c.from)} → ${c.to === null ? T.common.nowUnset : yuzde(c.to)}`).join(", ") }))
+      : sonucMetni(r.status, (b.errors ?? []).join(" · "), T.caps.rejected403));
+    setPayKod(""); setPayGonderiliyor(false); if (r?.ok && b.ok) { setPayTek(""); setPayToplam(""); }
+    await load();
   };
 
   // Ayar değişince YALNIZ kilit ayarı yeniden okunur (panel verisi kilit ekranında zaten okunmaz).
@@ -988,9 +1019,21 @@ export default function Panel() {
 
           <h2 id="risk-paylari" style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>{T.caps.heading}</h2>
           <p data-ne-yapar style={NE}>{T.caps.what}</p>
-          <section style={box(v.riskCaps.ok && v.riskCaps.singlePct !== null && v.riskCaps.totalPct !== null ? "INFO" : "WARN")} aria-label={T.caps.heading}>
+          <section id="risk-paylari-ayar" style={box(v.riskCaps.ok && v.riskCaps.singlePct !== null && v.riskCaps.totalPct !== null ? "INFO" : "WARN")} aria-label={T.caps.heading}>
             <p id="risk-paylari-deger" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{!v.riskCaps.ok ? T.caps.unreadable : fill(T.caps.value, { single: v.riskCaps.singlePct === null ? T.common.notSetUpper : yuzde(v.riskCaps.singlePct), total: v.riskCaps.totalPct === null ? T.common.notSetUpper : yuzde(v.riskCaps.totalPct) })}</p>
-            <p style={{ margin: ".3rem 0", lineHeight: 1.55, color: "#9a9aa2" }}>{T.caps.readonly}</p>
+            <p style={{ margin: ".3rem 0", lineHeight: 1.55, color: "#b4b4bb" }}>{T.caps.effect}</p>
+            {!v.riskCaps.ok ? <p style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{T.caps.formUnreadable}</p> : <div style={{ borderTop: "1px solid #23232a", paddingTop: ".5rem", marginTop: ".5rem" }}>
+              <p style={{ margin: ".3rem 0 .5rem", lineHeight: 1.55, color: "#b4b4bb" }}>{T.caps.help}</p>
+              <label htmlFor="pay-tek" style={{ display: "block", margin: ".5rem 0 .25rem", lineHeight: 1.45 }}>{T.caps.singleLabel} <span style={{ color: "#b4b4bb" }}>{fill(T.caps.current, { value: v.riskCaps.singlePct === null ? T.common.notSet : yuzde(v.riskCaps.singlePct) })}</span></label>
+              <input id="pay-tek" value={payTek} onChange={(e) => setPayTek(e.target.value)} inputMode="decimal" autoComplete="off" disabled={payGonderiliyor} style={{ ...alanStili, width: "9rem" }} />
+              <label htmlFor="pay-toplam" style={{ display: "block", margin: ".6rem 0 .25rem", lineHeight: 1.45 }}>{T.caps.totalLabel} <span style={{ color: "#b4b4bb" }}>{fill(T.caps.current, { value: v.riskCaps.totalPct === null ? T.common.notSet : yuzde(v.riskCaps.totalPct) })}</span></label>
+              <input id="pay-toplam" value={payToplam} onChange={(e) => setPayToplam(e.target.value)} inputMode="decimal" autoComplete="off" disabled={payGonderiliyor} style={{ ...alanStili, width: "9rem" }} />
+              <label htmlFor="pay-kod" style={{ display: "block", margin: ".6rem 0 .25rem", lineHeight: 1.45 }}>{T.risk.codeLabel}</label>
+              <input id="pay-kod" value={payKod} onChange={(e) => setPayKod(e.target.value)} inputMode="numeric" maxLength={6} autoComplete="one-time-code" disabled={payGonderiliyor} style={{ ...alanStili, width: "7rem" }} />
+              <p style={{ margin: ".7rem 0 0" }}><button id="pay-uygula" type="button" onClick={() => void payUygula()} disabled={!payHazir} style={dugme(payHazir, true)}>{T.caps.apply}</button></p>
+            </div>}
+            <div id="pay-sonuc" role="status" aria-live="polite">{paySonuc !== null && <p style={{ margin: ".5rem 0", lineHeight: 1.55 }}>{paySonuc}</p>}</div>
+            <TeknikAyrinti satirlar={[T.technical.sharesStorage, ...(paylar?.ok ? (paylar.changes ?? []).map((c) => fill(T.technical.sharesChange, { at: anTr(c.at), by: c.by, changes: c.changes.map((x) => `${x.field}: ${x.from ?? T.common.wasUnset} → ${x.to ?? T.common.nowUnset}`).join(" · ") })) : [])]} />
           </section>
 
           <h2 id="giris-salteri" style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>{T.entry.heading}</h2>
@@ -1003,7 +1046,7 @@ export default function Panel() {
 
         {/* ---- HISTORY ---- */}
         <div role="tabpanel" id="sekme-history" aria-labelledby="sekme-dugme-history" hidden={sekme !== "history"} style={panelGorunur("history")}>
-          <GecmisSekmesi v={v} settings={settings} risk={risk} />
+          <GecmisSekmesi v={v} settings={settings} risk={risk} paylar={paylar} />
         </div>
 
         {/* ---- TECHNICAL: eski panelin BÜTÜN ölçüm ayrıntısı (sunucunun kendi cümleleri) — silinmedi, taşındı ---- */}
