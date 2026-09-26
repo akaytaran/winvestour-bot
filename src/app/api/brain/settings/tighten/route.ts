@@ -6,6 +6,7 @@
 // Her kabul edilen değişiklik E-1 defterine ayarla AYNI işlemde yazılır (kim · ne zaman · eski → yeni). Bu uç motoru başlatmaz, durdurmaz ve emir göndermez.
 import { withAccess } from "@/lib/access";
 import { writeBrainSettings, type SettingsPatch } from "@/lib/brain-settings";
+import { EN } from "@/lib/i18n/en";
 export const dynamic = "force-dynamic";
 // BÖLGE (Tur 12, G11 · S-5): bölge ABD DIŞI sabit; Edge YASAK (Edge bölgesi çağırana göre seçilir). Değer src/lib/region.ts BINANCE_REGION ile birebir aynı olmalı (kapı ölçer).
 export const runtime = "nodejs";
@@ -18,5 +19,5 @@ export const POST = withAccess({ cls: "session" }, async (req) => {
   const patch = (body && typeof body === "object" ? body : {}) as SettingsPatch;
   const w = await writeBrainSettings(patch, BY, { direction: "tighten" });
   if (!w.ok) return Response.json(w, { status: w.status });
-  return Response.json({ ok: true, applied: w.changes, next: w.next, note: "ayar değişti (harcamayı azaltan yön, kod istenmedi); değişiklik anında etkilidir ve deftere yazıldı" }, { status: 200 });
+  return Response.json({ ok: true, applied: w.changes, next: w.next, note: EN.api.brainTightened }, { status: 200 });
 });

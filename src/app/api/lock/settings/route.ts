@@ -6,6 +6,7 @@
 // Okunamayan ayar 503 + ok:false döner; panel bunu "kapalı" değil "bilinmiyor" sayar (Ö-2). Durdurma ucu bu ayara DOKUNMAZ (K-7).
 import { withAccess } from "@/lib/access";
 import { readLockSettings, writeLockSettings } from "@/lib/lock";
+import { EN } from "@/lib/i18n/en";
 export const dynamic = "force-dynamic";
 // BÖLGE (Tur 12, G11 · S-5): bölge ABD DIŞI sabit; Edge YASAK (Edge bölgesi çağırana göre seçilir). Değer src/lib/region.ts BINANCE_REGION ile birebir aynı olmalı (kapı ölçer).
 export const runtime = "nodejs";
@@ -18,6 +19,6 @@ export const POST = withAccess({ cls: "sensitive", action: "LOCK_SETTINGS_CHANGE
   const w = await writeLockSettings((body ?? {}) as Record<string, never>);
   if (!w.ok) return Response.json(w, { status: w.status });
   return Response.json({ ok: true, applied: w.changes, next: w.next,
-    note: "kilit ayarı değişti; değişiklik ANINDA etkilidir (yeniden dağıtım gerekmez). Bu ayar motoru başlatmaz/durdurmaz ve hiçbir emir göndermez; durdurma ekranı bu kilide bağlı değildir (K-7).",
+    note: EN.api.lockApplied,
     view: await readLockSettings() }, { status: 200 });
 });

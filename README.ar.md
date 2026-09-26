@@ -44,7 +44,7 @@
 | `OWNER_PASSWORD_HASH` · `OWNER_TOTP_SECRET` · `SESSION_SECRET` | الملف الذي تكتبه خطوة التثبيت 4 |
 | `STOP_KEY_HASH` | الملف الذي تكتبه خطوة التثبيت 5 |
 | `ENCRYPTION_MASTER_KEY` | الملف الذي تكتبه خطوة التثبيت 6 |
-| `ENCRYPTION_KEY_VERSION` | `1` في التثبيت الجديد (يُرفع فقط عند تدوير المفتاح الرئيسي، الخطوة 14) |
+| `ENCRYPTION_KEY_VERSION` | `1` في التثبيت الجديد (يُرفع فقط عند تدوير المفتاح الرئيسي، الخطوة 15) |
 | `ENCRYPTION_MASTER_KEY_PREVIOUS` | اتركه فارغاً؛ يُستخدم فقط أثناء تدوير المفتاح الرئيسي |
 | `ENGINE_MODE` | `CHEAP` (نبضة واحدة كل دقيقة من المهمة المجدولة؛ الوضع الوحيد الذي يصفه هذا الملف) |
 
@@ -65,9 +65,9 @@ You are helping me install winvestour-bot, a self-hosted crypto trading bot for 
 
 3. Secrets. Never ask me to paste passwords, API keys, TOTP secrets or .env values into this chat; tell me which command generates them on my computer and where to paste them.
 
-4. Steps. Take me through the README's Installation steps below, in this order, with exactly these commands. Do not add, skip, reorder or change any command. Step 14 is optional and not part of the setup.
+4. Steps. Take me through the README's Installation steps below, in this order, with exactly these commands. Do not add, skip, reorder or change any command. Step 15 is optional and not part of the setup.
   1. Open the accounts you will need (about 30 minutes in total)
-     Check: you can sign in to all four services, and your Binance API key's permissions do not include withdrawals.
+     Check: you can sign in to all five services, and your Binance API key's permissions do not include withdrawals.
   2. Get the code onto your computer
      Check: the folder contains `package.json` and `.env.example`.
   3. Install the dependencies from the copy's lock file
@@ -75,43 +75,48 @@ You are helping me install winvestour-bot, a self-hosted crypto trading bot for 
      Check: the command ends without an error and a `node_modules` folder appears.
   4. Generate the owner password, the TOTP secret and the session secret
      Command: `npm run owner:credentials`
-     Check: the folder now contains sahip-kimlik.txt, vercel-env-sahip.json; the first holds your password and the TOTP setup key for your authenticator app, the second the three values for step 8. Nothing is printed on screen.
+     Check: the folder now contains owner-credentials.txt, vercel-env-owner.txt; the first holds your password and the TOTP setup key for your authenticator app, the second the three `NAME=value` lines for step 9. No value is printed on screen, only the file paths and short fingerprints.
   5. Generate the stop key (written to the same folder, not printed)
      Command: `npm run stop:credential`
-     Check: durdurma-anahtari.txt, vercel-env-STOP_KEY_HASH.txt appear in the folder; the first holds the raw stop key you will type on the stop screen, the second its hash for step 8.
+     Check: stop-key.txt, vercel-env-STOP_KEY_HASH.txt appear in the folder; the first holds the raw stop key you will type on the stop screen, the second its hash for step 9.
   6. Generate the master key that encrypts your exchange keys (written to the same folder, not printed)
      Command: `npm run key:encryption-master`
-     Check: sifreleme-ana-anahtari.txt, vercel-env-ENCRYPTION_MASTER_KEY.txt appear in the folder.
-  7. Create an empty PostgreSQL database
+     Check: encryption-master-key.txt, vercel-env-ENCRYPTION_MASTER_KEY.txt appear in the folder.
+  7. Generate the Ed25519 key pair for your Binance API key (written to the same folder; the private key is not printed)
+     Command: `npm run key:generate`
+     Check: binance-private-key.pem, binance-public-key.pem appear in the folder. On Binance choose Profile → API Management → Create API → Self-generated and paste the contents of the second file (the public key); you paste the first file (the private key) into the panel later ("First use").
+  8. Create an empty PostgreSQL database
      Check: two strings that start with `postgresql://`; the database has no tables yet.
-  8. Give every name in `.env.example` its value
-     Check: every name in `.env.example` has a value. If a required name is missing, the application stops at startup and names the missing variable.
-  9. Create the database tables
+  9. Give every name in `.env.example` its value — except `ENCRYPTION_MASTER_KEY_PREVIOUS`, which stays empty (it is used only during a master-key rotation)
+     Check: every name in `.env.example` except `ENCRYPTION_MASTER_KEY_PREVIOUS` has a value. If a required name is missing, the application stops at startup and names the missing variable.
+  10. Create the database tables
      Command: `npx prisma migrate deploy`
      Check: the output ends with `All migrations have been successfully applied.` A single migration named `0_baslangic` is applied; every settings table starts with one row; the risk settings are empty and switched off.
-  10. Check that the code builds on your computer (recommended before deploying)
+  11. Check that the code builds on your computer (recommended before deploying)
      Command: `npm run build`
      Check: the command ends with the list of routes and no error; a `.next` folder appears.
-  11. Start it locally
+  12. Start it locally
      Command: `npm start`
      Check: the page shows `{"ok":true,"service":"engine",...}`, and `http://localhost:3000/panel` opens and says that the panel needs a session. The environment contract is validated as the server starts: if a required name is missing or malformed the server does not come up, and the error names the missing variable, never its value. Stop the server with Ctrl+C. Running the bot on your own computer is not supported yet: the engine is triggered by Vercel Cron. Local start is only for checking the installation.
-  12. Deploy on Vercel
+  13. Deploy on Vercel
      Check: the deployment reaches Ready, and `https://<your-project>.vercel.app/api/health` returns `{"ok":true,...}`. On the Hobby plan the deployment fails instead, with a message that cron expressions running more often than once per day are not allowed.
-  13. Open the panel at `/panel` on your address, and the stop screen at `/durdur`
-     Check: both pages open (today the interface is in Turkish). The panel says it needs a session; the stop screen opens without a session and asks for the stop key. Continue with "First use".
-  14. OPTIONAL, NOT PART OF SETUP — MASTER KEY ROTATION
+  14. Open the panel at `/panel` on your address, and the stop screen at `/durdur`
+     Check: both pages open (the interface is in English). The panel says it needs a session; the stop screen opens without a session and asks for the stop key. Continue with "First use".
+  15. OPTIONAL, NOT PART OF SETUP — MASTER KEY ROTATION
      Command: `npm run rotate:encryption-key`
      Check: each row is decrypted with the old key and re-wrapped with the new one in its own transaction, and its version is raised; the new envelope is checked against the new key BEFORE anything is written. Once no row is left on the old version, `ENCRYPTION_MASTER_KEY_PREVIOUS` can be deleted. No key value is ever printed.
 
 5. Checks. After each step, ask me to compare what I see with the Check line of that step. If it does not match, stop, do not improvise a fix, and send me to the README section "FAQ / troubleshooting" and the wiki page FAQ.
 
-6. First use. When the deployment is Ready, guide me through the README section "First use" in this order (the panel is in Turkish; the README gives each button's name):
+6. First use. When the deployment is Ready, guide me through the README section "First use" in this order (the panel and the stop screen are in English; the README gives each screen's and button's name):
   1. Sign in (owner password, then a one-time code per sensitive action)
-  2. Add your Binance API key (withdrawals must be off)
-  3. Choose the tick interval (born empty)
-  4. Start and stop the engine
-  5. The entry switch (born ENABLED)
-  6. The cost cap and the Brain (born empty)
+  2. Read the Status tab: engine status and "Before you start"
+  3. Fill in the Settings tab
+  4. Capital
+  5. Start the engine
+  6. Stop the engine
+  7. History and Technical
+  8. What this release does not have
 ```
 
 </div>
@@ -119,11 +124,11 @@ You are helping me install winvestour-bot, a self-hosted crypto trading bot for 
 <!-- readme:install -->
 ## التثبيت
 
-كل خطوة من الخطوات الـ14 أدناه تُنفَّذ قبل كل إصدار في نسخة نظيفة من هذا المستودع — الخطوات 1–13 عبر فحص التثبيت الآلي، الخطوة 14 عبر فحص تدوير المفتاح. الخطوة التي لا تُنفَّذ بهذه الطريقة لا تُكتب هنا.
+كل خطوة من الخطوات الـ15 أدناه تُنفَّذ قبل كل إصدار في نسخة نظيفة من هذا المستودع — الخطوات 1–14 عبر فحص التثبيت الآلي، الخطوة 15 عبر فحص تدوير المفتاح. الخطوة التي لا تُنفَّذ بهذه الطريقة لا تُكتب هنا.
 
 1. أنشئ الحسابات اللازمة (نحو 30 دقيقة إجمالاً): حساب **Neon** (قاعدة بيانات PostgreSQL)، وحساب **Upstash** (Redis)، وحساب **Vercel** على **خطة Pro** (يشغّل التطبيق مهمة مجدولة كل دقيقة؛ على خطة Hobby المجانية يفشل النشر — انظر "ما تحتاجه")، ومفتاح API من **Anthropic**، ومفتاح API من **Binance** مُنشأ **دون صلاحية السحب**.
 
-النتيجة المتوقعة: يمكنك تسجيل الدخول إلى الخدمات الأربع، ولا تتضمن صلاحيات مفتاح Binance API الخاص بك السحب.
+النتيجة المتوقعة: يمكنك تسجيل الدخول إلى الخدمات الخمس، ولا تتضمن صلاحيات مفتاح Binance API الخاص بك السحب.
 
 2. احصل على الكود على جهازك: في صفحة هذا المستودع اختر **Code → Download ZIP** (أو استنسخه بعميل git الخاص بك)، ثم فك الضغط وافتح طرفية داخل ذلك المجلد.
 
@@ -141,7 +146,7 @@ npm ci
 
 النتيجة المتوقعة: ينتهي الأمر دون خطأ ويظهر مجلد `node_modules`.
 
-4. أنشئ كلمة مرور المالك وسر TOTP وسر الجلسة. لا تُطبع القيم؛ بل تُكتب في مجلد خارج المستودع (افتراضياً `winvestour-yedek` في مجلدك الرئيسي، و`-- --dir <مجلد>` لمكان آخر):
+4. أنشئ كلمة مرور المالك وسر TOTP وسر الجلسة. لا تُطبع أي قيمة، بل مسارات الملفات وبصمات قصيرة فقط؛ وتُكتب القيم في مجلد خارج المستودع (افتراضياً `winvestour-backup` في مجلدك الرئيسي، و`-- --dir <مجلد>` لمكان آخر):
 
 <div dir="ltr">
 
@@ -151,7 +156,7 @@ npm run owner:credentials
 
 </div>
 
-النتيجة المتوقعة: يحتوي المجلد الآن على `sahip-kimlik.txt`, `vercel-env-sahip.json`؛ الأول يحمل كلمة مرورك ومفتاح إعداد TOTP لتطبيق المصادقة، والثاني القيم الثلاث للخطوة 8. لا يُطبع شيء على الشاشة.
+النتيجة المتوقعة: يحتوي المجلد الآن على `owner-credentials.txt`, `vercel-env-owner.txt`؛ الأول يحمل كلمة مرورك ومفتاح إعداد TOTP لتطبيق المصادقة، والثاني الأسطر الثلاثة `NAME=value` للخطوة 9. لا تُطبع أي قيمة على الشاشة، فقط مسارات الملفات وبصمات قصيرة.
 
 5. أنشئ مفتاح الإيقاف (يُكتب في المجلد نفسه ولا يُطبع):
 
@@ -163,7 +168,7 @@ npm run stop:credential
 
 </div>
 
-النتيجة المتوقعة: يظهر في المجلد `durdurma-anahtari.txt`, `vercel-env-STOP_KEY_HASH.txt`؛ الأول يحمل مفتاح الإيقاف الخام الذي ستكتبه في شاشة الإيقاف، والثاني تجزئته للخطوة 8.
+النتيجة المتوقعة: يظهر في المجلد `stop-key.txt`, `vercel-env-STOP_KEY_HASH.txt`؛ الأول يحمل مفتاح الإيقاف الخام الذي ستكتبه في شاشة الإيقاف، والثاني تجزئته للخطوة 9.
 
 6. أنشئ المفتاح الرئيسي الذي يشفّر مفاتيح المنصة الخاصة بك (يُكتب في المجلد نفسه ولا يُطبع). إذا ضاع هذا المفتاح فلن تُفتح الصفوف المشفّرة مرة أخرى أبداً؛ احتفظ بنسخة ثانية في مدير كلمات المرور لديك:
 
@@ -175,17 +180,29 @@ npm run key:encryption-master
 
 </div>
 
-النتيجة المتوقعة: يظهر في المجلد `sifreleme-ana-anahtari.txt`, `vercel-env-ENCRYPTION_MASTER_KEY.txt`.
+النتيجة المتوقعة: يظهر في المجلد `encryption-master-key.txt`, `vercel-env-ENCRYPTION_MASTER_KEY.txt`.
 
-7. أنشئ قاعدة بيانات PostgreSQL فارغة: في Neon أنشئ مشروعاً وانسخ سلسلتي الاتصال — تصبح المجمَّعة `DATABASE_URL` والمباشرة (غير المجمَّعة) `DIRECT_URL`.
+7. أنشئ زوج مفاتيح Ed25519 لمفتاح Binance API الخاص بك (يُكتب في المجلد نفسه؛ ولا يُطبع المفتاح الخاص):
+
+<div dir="ltr">
+
+```sh
+npm run key:generate
+```
+
+</div>
+
+النتيجة المتوقعة: يظهر في المجلد `binance-private-key.pem`, `binance-public-key.pem`. في Binance اختر Profile → API Management → Create API → **Self-generated** والصق محتوى الملف الثاني (المفتاح العام)؛ وتلصق الملف الأول (المفتاح الخاص) لاحقاً في اللوحة ("الاستخدام الأول").
+
+8. أنشئ قاعدة بيانات PostgreSQL فارغة: في Neon أنشئ مشروعاً وانسخ سلسلتي الاتصال — تصبح المجمَّعة `DATABASE_URL` والمباشرة (غير المجمَّعة) `DIRECT_URL`. اختر المنطقة **AWS Asia Pacific (Singapore)** (`aws-ap-southeast-1`): تعمل دوال التطبيق في طوكيو (`hnd1`، انظر `vercel.json`) ولا توجد لدى Neon منطقة في طوكيو؛ سنغافورة هي الأقرب (قائمة مناطق Neon، قُرئت في 2026-09-26).
 
 النتيجة المتوقعة: سلسلتان تبدآن بـ `postgresql://`؛ لا توجد جداول في قاعدة البيانات بعد.
 
-8. أعطِ كل اسم في `.env.example` قيمته. مصدر كل قيمة موجود في الجدول تحت "ما تحتاجه"؛ وتأتي `OWNER_PASSWORD_HASH`, `OWNER_TOTP_SECRET`, `SESSION_SECRET`, `STOP_KEY_HASH`, `ENCRYPTION_MASTER_KEY` من ملفات الخطوات 4–6. للنشر أدخلها في Vercel تحت **Settings → Environment Variables**؛ وللتشغيل المحلي ضع الأسماء نفسها في ملف `.env` بجانب `package.json` (يتجاهل git هذا الملف). القيم لا تدخل المستودع أبداً.
+9. أعطِ كل اسم في `.env.example` قيمته — باستثناء `ENCRYPTION_MASTER_KEY_PREVIOUS` الذي يبقى فارغاً (يُستخدم فقط أثناء تدوير المفتاح الرئيسي). مصدر كل قيمة موجود في الجدول تحت "ما تحتاجه"؛ وتأتي `OWNER_PASSWORD_HASH`, `OWNER_TOTP_SECRET`, `SESSION_SECRET`, `STOP_KEY_HASH`, `ENCRYPTION_MASTER_KEY` من ملفات الخطوات 4–6. للنشر أدخلها في Vercel تحت **Settings → Environment Variables**؛ وللتشغيل المحلي ضع الأسماء نفسها في ملف `.env` بجانب `package.json` (يتجاهل git هذا الملف). القيم لا تدخل المستودع أبداً.
 
-النتيجة المتوقعة: لكل اسم في `.env.example` قيمة. إذا غاب اسم إلزامي يتوقف التطبيق عند بدء التشغيل ويذكر المتغير الناقص.
+النتيجة المتوقعة: لكل اسم في `.env.example` قيمة باستثناء `ENCRYPTION_MASTER_KEY_PREVIOUS`. إذا غاب اسم إلزامي يتوقف التطبيق عند بدء التشغيل ويذكر المتغير الناقص.
 
-9. أنشئ جداول قاعدة البيانات. شغّل هذا مرة واحدة من جهازك مع ضبط `DIRECT_URL` (في `.env` أو في الطرفية)؛ يكرر Vercel الأمر نفسه عند كل نشر، وهذا غير ضار:
+10. أنشئ جداول قاعدة البيانات. شغّل هذا مرة واحدة من جهازك مع ضبط `DIRECT_URL` (في `.env` أو في الطرفية)؛ يكرر Vercel الأمر نفسه عند كل نشر، وهذا غير ضار:
 
 <div dir="ltr">
 
@@ -197,7 +214,7 @@ npx prisma migrate deploy
 
 النتيجة المتوقعة: ينتهي الإخراج بالسطر `All migrations have been successfully applied.` تُطبَّق ترحيلة واحدة باسم `0_baslangic`؛ يبدأ كل جدول إعدادات بصف واحد؛ وإعدادات المخاطر فارغة ومعطَّلة.
 
-10. تحقق من أن الكود يُبنى على جهازك (يُنصح به قبل النشر):
+11. تحقق من أن الكود يُبنى على جهازك (يُنصح به قبل النشر):
 
 <div dir="ltr">
 
@@ -209,7 +226,7 @@ npm run build
 
 النتيجة المتوقعة: ينتهي الأمر بقائمة المسارات دون خطأ؛ ويظهر مجلد `.next`.
 
-11. شغّله محلياً. عندما يعمل التطبيق افتح `http://localhost:3000/api/health` في متصفحك:
+12. شغّله محلياً. عندما يعمل التطبيق افتح `http://localhost:3000/api/health` في متصفحك:
 
 <div dir="ltr">
 
@@ -221,15 +238,15 @@ npm start
 
 النتيجة المتوقعة: تعرض الصفحة `{"ok":true,"service":"engine",...}`، ويُفتح `http://localhost:3000/panel` ويقول إن اللوحة تحتاج جلسة. يُتحقق من عقد البيئة عند بدء الخادم: إذا غاب اسم إلزامي أو كان مشوَّهاً فلا يعمل الخادم، ويذكر الخطأ المتغير الناقص دون قيمته أبداً. أوقف الخادم بـ Ctrl+C. تشغيل البوت على حاسوبك غير مدعوم بعد: يُشغَّل المحرك بواسطة Vercel Cron. التشغيل المحلي للتحقق من التثبيت فقط.
 
-12. انشر على Vercel: ادفع نسختك إلى حساب GitHub الخاص بك، ثم في Vercel اختر **Add New → Project → Import** لذلك المستودع، وأبقِ الإعداد المسبق للإطار **Next.js**، وأضف متغيرات البيئة من الخطوة 8، ثم اضغط **Deploy**. يشغّل Vercel السكربت `vercel-build`: يرفض أولاً أي ترحيلة قد تحذف بيانات، ثم ينشئ الجداول ويبني.
+13. انشر على Vercel: ادفع نسختك إلى حساب GitHub الخاص بك، ثم في Vercel اختر **Add New → Project → Import** لذلك المستودع، وأبقِ الإعداد المسبق للإطار **Next.js**، وأضف متغيرات البيئة من الخطوة 9، ثم اضغط **Deploy**. يشغّل Vercel السكربت `vercel-build`: يرفض أولاً أي ترحيلة قد تحذف بيانات، ثم ينشئ الجداول ويبني.
 
 النتيجة المتوقعة: يصل النشر إلى **Ready**، ويعيد `https://<مشروعك>.vercel.app/api/health` القيمة `{"ok":true,...}`. على خطة Hobby يفشل النشر بدلاً من ذلك برسالة تفيد بأن تعبيرات cron التي تعمل أكثر من مرة يومياً غير مسموح بها.
 
-13. افتح اللوحة عبر `/panel` على عنوانك، وشاشة الإيقاف عبر `/durdur`.
+14. افتح اللوحة عبر `/panel` على عنوانك، وشاشة الإيقاف عبر `/durdur`.
 
-النتيجة المتوقعة: تُفتح الصفحتان (الواجهة اليوم باللغة التركية). تقول اللوحة إنها تحتاج جلسة؛ وتُفتح شاشة الإيقاف دون جلسة وتطلب مفتاح الإيقاف. تابع مع "الاستخدام الأول".
+النتيجة المتوقعة: تُفتح الصفحتان (الواجهة باللغة الإنجليزية). تقول اللوحة إنها تحتاج جلسة؛ وتُفتح شاشة الإيقاف دون جلسة وتطلب مفتاح الإيقاف. تابع مع "الاستخدام الأول".
 
-14. اختياري، ليس جزءاً من الإعداد — تدوير المفتاح الرئيسي. إذا تسرّب مفتاحك الرئيسي أو أردت تغييره: أزح ملف النسخة الاحتياطية القديم جانباً، وشغّل الخطوة 6 مجدداً لإنشاء مفتاح جديد، ومرّر الجديد كـ `ENCRYPTION_MASTER_KEY` والقديم كـ `ENCRYPTION_MASTER_KEY_PREVIOUS`، وزد `ENCRYPTION_KEY_VERSION` بمقدار واحد. الوضع الافتراضي تشغيل تجريبي: لا يُكتب شيء، وتُقاس فقط إمكانية فك التشفير؛ أضف `-- --write` للكتابة فعلاً:
+15. اختياري، ليس جزءاً من الإعداد — تدوير المفتاح الرئيسي. إذا تسرّب مفتاحك الرئيسي أو أردت تغييره: أزح ملف النسخة الاحتياطية القديم جانباً، وشغّل الخطوة 6 مجدداً لإنشاء مفتاح جديد، ومرّر الجديد كـ `ENCRYPTION_MASTER_KEY` والقديم كـ `ENCRYPTION_MASTER_KEY_PREVIOUS`، وزد `ENCRYPTION_KEY_VERSION` بمقدار واحد. الوضع الافتراضي تشغيل تجريبي: لا يُكتب شيء، وتُقاس فقط إمكانية فك التشفير؛ أضف `-- --write` للكتابة فعلاً:
 
 <div dir="ltr">
 
@@ -244,33 +261,45 @@ npm run rotate:encryption-key
 <!-- readme:first-use -->
 ## الاستخدام الأول
 
-الواجهة اليوم باللغة **التركية** فقط. تسجّل الدخول من صفحة اللوحة بكلمة مرور المالك وتضيف مفتاح Binance من اللوحة؛ أما تشغيل المحرك فما زال يتم بطلب HTTP واحد (من وحدة تحكم المطوّر في متصفحك أو أي عميل HTTP) أثناء تسجيل دخولك. كل خطوة أدناه تصف بالضبط ما يفعله البرنامج اليوم؛ لا شيء هنا مخطَّط أو موعود.
+اللوحة وشاشة الإيقاف باللغة **الإنجليزية** (لغات أخرى مخطط لها). كل ما يلي يصف بدقة ما يفعله البرنامج اليوم؛ لا شيء هنا مخطط له أو موعود به. للّوحة أربعة تبويبات — **Status · Settings · History · Technical** — وتُفتح على **Status**. أسماء الشاشات والأزرار مكتوبة أدناه كما تظهر تماماً (بالإنجليزية).
 
-**الإعدادات:** كل إعداد في اللوحة — ما يفعله، وقيمته الافتراضية، وهل يحتاج الرمز لمرة واحدة، ومتى يسري — موصوف في صفحة الويكي [Settings guide](https://github.com/akaytaran/winvestour-bot/wiki/Settings-guide) (بالإنجليزية).
+**الإعدادات:** كل إعداد في اللوحة — ما الذي يفعله، وقيمته الافتراضية، وهل يحتاج إلى الرمز لمرة واحدة، ومتى يسري — موصوف في صفحة [Settings guide](https://github.com/akaytaran/winvestour-bot/wiki/Settings-guide) في الويكي (بالإنجليزية)؛ وتظهر الشاشات في صفحة [Panel guide](https://github.com/akaytaran/winvestour-bot/wiki/Panel-guide).
 
 ### 1. تسجيل الدخول (كلمة مرور المالك، ثم رمز لمرة واحدة لكل إجراء حساس)
 
-افتح `https://<مشروعك>.vercel.app/panel` في متصفحك. دون جلسة تعرض اللوحة حقلاً واحداً **Parola** (كلمة المرور) وزر **Giriş yap** (تسجيل الدخول): اكتب كلمة المرور من ملف الخطوة 4 واضغط الزر — فتفتح الصفحة نفسها اللوحة. تدوم الجلسة **8 ساعات**. عند كلمة مرور خاطئة تظهر "Parola yanlış, yeniden dene." (كلمة المرور خاطئة، حاول مجدداً). بعد **5** محاولات خاطئة يُقفل تسجيل الدخول وكل إجراء حساس لمدة **15 دقيقة** وتعرض اللوحة "Çok fazla yanlış deneme yapıldı; giriş kilitlendi, en geç 15 dakika sonra yeniden dene." (محاولات خاطئة كثيرة، أعد المحاولة خلال 15 دقيقة على الأكثر) — وأثناء القفل تُرفض حتى كلمة المرور الصحيحة؛ ولا تُقفل شاشة الإيقاف أبداً. لإنهاء الجلسة اضغط **Çıkış yap** (تسجيل الخروج) أعلى اللوحة. تتطلب الإجراءات الحساسة (إضافة مفتاح، تشغيل المحرك، فتح مفتاح الدخول، رفع سقف التكلفة) إضافةً إلى ذلك **الرمز الحالي المكوَّن من 6 أرقام** من تطبيق المصادقة لديك، مُرسَلاً في ترويسة الطلب `x-totp-code` — تطلبه نماذج اللوحة في حقل بعنوان "Tek kullanımlık kod" (رمز لمرة واحدة). أضف سر TOTP من ملف الخطوة 4 إلى تطبيق المصادقة مرة واحدة.
+افتح `https://<مشروعك>.vercel.app/panel`. بدون جلسة تعرض اللوحة حقلاً واحداً **Password** وزر **Sign in**: اكتب كلمة المرور من `owner-credentials.txt` (خطوة التثبيت 4) واضغط الزر — فتفتح الصفحة نفسها اللوحة. تدوم الجلسة **8 ساعات**. كلمة المرور الخاطئة تُظهر "Wrong password, try again.". بعد **5** محاولات خاطئة يُقفل تسجيل الدخول وكل إجراء حساس لمدة **15 دقيقة** ("Too many wrong attempts: sign-in is locked. Try again in at most 15 minutes.")؛ ولا تُقفل شاشة الإيقاف أبداً. **Sign out** في أعلى اللوحة. الإجراءات الحساسة (إضافة مفتاح، تشغيل المحرك، تغيير الدخول، رفع تكلفة) تطلب أيضاً الرمز الحالي المكوَّن من 6 أرقام من تطبيق المصادقة، في الحقل "One-time code (6 digits) — from your authenticator app". أضف مفتاح إعداد TOTP من `owner-credentials.txt` إلى تطبيق المصادقة مرة واحدة.
 
-### 2. أضف مفتاح Binance API الخاص بك (يجب أن يكون السحب معطَّلاً)
+### 2. اقرأ تبويب Status: حالة المحرك و"Before you start"
 
-أنشئ المفتاح أولاً على Binance: ولّد على حاسوبك زوج مفاتيح **Ed25519** بأداة توليد المفاتيح من Binance (يبقى المفتاح الخاص عندك)، ثم افتح على Binance: الملف الشخصي ← API Management ← Create API ← **Self-generated**، والصق المفتاح العام، وأعطه اسماً وأكمل التحقق الثنائي؛ عندها يعرض لك Binance مفتاح API key. الأذونات: القراءة **مفعّلة** (المفتاح بلا قراءة يُرفض)، والتداول الفوري **مفعّل** ليتمكن المحرك من إرسال الأوامر، والعقود الآجلة فقط إن كنت تستخدمها، والسحب والتحويل الشامل **معطَّلان**. ثم افتح في اللوحة قسم **"Binance API anahtarı"** (مفتاح Binance API) ← **"Anahtar ekle (tek kullanımlık kod ister)"** (إضافة مفتاح، يطلب الرمز لمرة واحدة)، واملأ **Ad** (اسم تراه أنت فقط) و**API key** و**Özel anahtar** (المفتاح الخاص Ed25519 كاملاً بصيغة PEM — يبقى الحقل مخفياً) و**Tek kullanımlık kod**، ثم اضغط **"Anahtarı doğrula ve kaydet"** (تحقّق واحفظ). يفحص التطبيق أذونات المفتاح على Binance قبل حفظ أي شيء: المفتاح الذي يسمح بالسحب أو التحويل الشامل يُرفض ولا يُحفظ في أي مكان، وتقول اللوحة أيّ إذن يجب تعطيله؛ والمفتاح الخاص الذي ليس Ed25519 PEM يُرفض أيضاً. المفتاح المقبول يُخزَّن مشفَّراً بمفتاحك الرئيسي؛ لا يُعرض أي جزء منه ولا يُطبع ولا يُعاد أبداً. بعد ذلك يعرض القسم نفسه هل يوجد مفتاح محفوظ، وأذوناته كما أبلغ عنها Binance، ومتى تغيّر آخر مرة، وعدّاد الثلاثين يوماً (يحذف Binance المفتاح غير المقيَّد بعنوان IP بعد 30 يوماً بلا أوامر — مُقاس). مع مفتاح جديد يستخدم المحرك الأحدث؛ ولا يُغلَق المفتاح القديم على Binance — احذفه هناك بنفسك.
+تعرض بطاقة **ENGINE STATUS** في الأعلى إحدى أربع حالات تُقرأ من الخادم: **Running** (يعمل) · **Stopped** (أوقفته أنت أو قاعدة حماية) · **Not running** (لم يبدأ قط، أو انتهت صلاحية إذن التشغيل) · **Unknown** (تعذّرت قراءة الحالة؛ يُعرض STOP ولا يُعرض START). تحتها تسرد **Before you start** ما يحتاجه المحرك: Binance key · Tick interval · Cost cap · Infrastructure cost · Single position share · Total exposure — كل منها ✓ (تم) أو ✗ (ناقص) أو ? (تعذّرت قراءته) — إضافة إلى سطرين للمعلومات: Entry switch و Capital. ما دام أي سطر ✗ أو ?، يبقى زر **START** مخفياً ويأخذك رابط "First: …" إلى الإعداد. تظهر التحذيرات (مثل أمر حماية مفقود) تحت "Look at these first"، ويعرض "At a glance" آخر تشغيل للمحرك والمراكز المفتوحة والعمولة المدفوعة في هذه الفترة.
 
-### 3. اختر فاصل النبضة (يولد فارغاً)
+### 3. املأ تبويب Settings
 
-افتح `/panel` بالجلسة وابحث عن القسم **"Tik aralığı — motor ne sıklıkla çalışır"** (فاصل النبضة). الخيارات هي **كل 1 أو 2 أو 3 دقائق**. في التثبيت الجديد يكون الفاصل **فارغاً** ولا يمكن تشغيل المحرك حتى تختار واحداً. يسري التغيير **خلال 20 دقيقة على الأكثر** أو عند إعادة تشغيل المحرك؛ اختيار فاصل أقل تكراراً لا يحتاج رمزاً، والأكثر تكراراً يطلب الرمز لمرة واحدة.
+- **Binance API key:** أنشئ المفتاح أولاً. ولّد زوج Ed25519 بالأمر `npm run key:generate` (خطوة التثبيت 7) أو بمولّد مفاتيح Binance نفسه؛ في Binance افتح Profile → API Management → Create API → **Self-generated**، والصق المفتاح العام، وأعطه اسماً وأكمل التحقق بخطوتين. الصلاحيات: القراءة **مفعّلة** (المفتاح بلا قراءة يُرفض)، والتداول الفوري **مفعّل** ليتمكن المحرك من إرسال الأوامر، والعقود الآجلة فقط إن كنت تستخدمها، والسحب والتحويل الشامل **معطّلان**. في اللوحة افتح **Settings → Binance API key → Add a key (needs the one-time code)**، واملأ **Name** و **API key** و **Private key** (المحتوى الكامل لـ `binance-private-key.pem`؛ يبقى الحقل مخفياً) والرمز لمرة واحدة، ثم اضغط **Verify and save the key**. يتحقق التطبيق من الصلاحيات في Binance قبل حفظ أي شيء؛ المفتاح الذي يُفعّل السحب أو التحويل الشامل يُرفض ("Key REFUSED: …") ولا يُحفظ في أي مكان. المفتاح المقبول يُحفظ مشفّراً بمفتاحك الرئيسي ولا يُعرض مرة أخرى أبداً. مع مفتاح جديد يستخدم المحرك الأحدث؛ احذف المفاتيح القديمة في Binance بنفسك.
+- **Tick interval — how often the engine runs:** يولد **فارغاً**؛ ولا يبدأ المحرك بدونه. افتح **Change (less frequent needs no code; more frequent needs a code)** واختر أحد الأزرار: **كل 1 أو 2 أو 3 دقائق**. يسري التغيير **خلال 20 دقيقة على الأكثر**، أو عند تشغيل المحرك مرة أخرى.
+- **Monthly cost cap:** يولد **فارغاً**؛ وما دام فارغاً **لا يُستدعى** محرك القرار (Claude) إطلاقاً. ليعمل، افتح **Change the cap (…)**، وحدّد **Monthly total cost cap** و **Monthly infrastructure cost (the sum of your own Neon, Vercel and Upstash bills)**، واكتب كليهما بالدولار شهرياً. الخفض أو الإفراغ لا يحتاج رمزاً؛ والرفع يحتاج الرمز لمرة واحدة. يعرض **Decision engine — model · frequency · candidates · candles** النموذج (`claude-opus-5` افتراضياً) وعدد مرات استدعائه (كل 24 ساعة افتراضياً).
+- **Risk shares — single position · total exposure:** تُعرض للقراءة فقط. يولد التثبيت الجديد بكلتيهما **فارغتين**، ولا يوجد في هذا الإصدار **عنصر تحكم في اللوحة** يكتبهما: في التثبيت الجديد يبقى هذان السطران من "Before you start" على ✗ و**يبقى START مخفياً**. يضيف إصدار لاحق عنصر التحكم.
+- **Entry switch:** يولد **ON** — يمكن للمحرك فتح مراكز جديدة بقراره الخاص بمجرد ضبط كل شيء آخر. اضغط المفتاح لتغييره؛ عند تشغيله تظهر "Read before turning it on" مع التحذير من أعلى هذه الصفحة ومربع اختيار، والاتجاهان كلاهما يطلبان الرمز لمرة واحدة. في وضع OFF يستمر المحرك في العمل وتستمر عمليات الخروج والحماية، لكن لا يُفتح أي مركز جديد ولا يُستدعى محرك القرار.
 
-### 4. تشغيل المحرك وإيقافه
+### 4. رأس المال
 
-**التشغيل:** لا يوجد زر تشغيل في اللوحة اليوم. أرسل `POST /api/engine/resume` مع كوكي الجلسة وترويسة `x-totp-code`. إذا كان فاصل النبضة ما زال فارغاً يُرفض الطلب بـ **TICK_UNSET** (HTTP 409) ولا يتغير شيء. **الإيقاف:** افتح `/durdur` — لا يحتاج **جلسة** ولا رمزاً. اكتب مفتاح الإيقاف الخام من ملف الخطوة 5، واختر تحت **"Ne olsun?"** إما **"Yalnız durdur"** (إيقاف فقط: تبقى المراكز المفتوحة وأوامر حمايتها على المنصة كما هي) أو **"Durdur ve kapatma iste"** (إيقاف وتسجيل طلب إغلاق؛ البرنامج لا يغلق المراكز بنفسه اليوم)، ثم أرسل. لا يُخزَّن المفتاح في المتصفح أبداً.
+يتداول المحرك بـ **USDT الحر في محفظتك الفورية على Binance**، لذا يحتاج المفتاح إلى **Enable Spot & Margin Trading**. حجم المركز الواحد هو **Single position share** × رصيد USDT الحر. ترفض Binance الأمر الذي يقل عن الحد الأدنى لقيمة الأمر للزوج (مرشح NOTIONAL)؛ ويقرأ المحرك هذا الحد من Binance قبل كل أمر — وكان في حساب القائم على المشروع **5 USDT** لمعظم الأزواج المفحوصة و 1 USDT لبعضها (قيس في 2026-09-10). إذا كانت الحصة × الرصيد الحر أقل منه فلا يُفتح أي مركز؛ ويستمر المحرك في العمل والحماية. لا تتصل اللوحة بـ Binance، لذا لا يمكنها هنا مقارنة الرصيد الحر اليوم بهذا الحد: يعرض سطر **Capital** آخر قيمة حساب مقيسة. مقدار ما تودعه قرارك أنت.
 
-### 5. مفتاح الدخول (يولد مُفعَّلاً)
+### 5. تشغيل المحرك
 
-يعرض قسم اللوحة **"Giriş şalteri"** ما إذا كان المحرك يستطيع إرسال أوامر **الدخول**. في التثبيت الجديد يولد **مُفعَّلاً**، لكن لا يُرسَل أي أمر ما دام مفتاح Binance ورأس المال وإعدادات المخاطر فارغة. يتيح لك فتح **"Bu ayarı değiştir (tek kullanımlık kod ister)"** تبديله؛ و**تفعيله** يعرض نص التحذير من أعلى هذه الصفحة مع خانة يجب أن تؤشّرها، ويطلب الرمز لمرة واحدة. تعطيله لا يغلق المراكز المفتوحة ولا يوقف المحرك — استخدم `/durdur` لذلك.
+عندما يكون كل سطر في "Before you start" ✓ يعرض تبويب Status زراً أخضر **START**. اضغطه، واكتب الرمز في "One-time code (6 digits) — the code from your authenticator app" واضغط **Start the engine**. تعرض البطاقة عندها **Running** و "Start accepted: the run permit was granted until …" — تُعاد قراءة الحالة من الخادم ولا تُخمَّن. إذا لم يُختر فاصل التكات يكون الرد "The engine did not start: no tick interval is chosen." ولا يتغير شيء. ترتيب حذر: اجعل **Entry switch** على OFF أولاً، وشغّل المحرك وراقب **Running** ليوم كامل، ثم قرّر هل تفعّل الدخول.
 
-### 6. سقف التكلفة والدماغ (يولد فارغاً)
+### 6. إيقاف المحرك
 
-يحفظ القسم **"Aylık maliyet tavanı"** سقف التكلفة الشهري بالدولار. يولد **فارغاً**، وما دام فارغاً **لا** يُستدعى الدماغ (Claude) إطلاقاً ("Tavan boşken davranış": الدماغ متوقف). أدخل سقفاً عندما تريد أن يعمل توليد القواعد اليومي؛ خفض السقف أو إفراغه لا يحتاج رمزاً، ورفعه يطلب الرمز لمرة واحدة. يعرض القسم **"Karar motoru ayarı"** النموذج (`claude-opus-5` افتراضياً)، وتكرار الاستدعاء (كل 24 ساعة افتراضياً)، وعدد المرشحين والشموع.
+أثناء عمل المحرك تعرض البطاقة زراً أحمر **STOP**: اختر **Stop only** (لا مراكز جديدة؛ تبقى المراكز المفتوحة وأوامر حمايتها في المنصة كما هي) أو **Stop and request closing** (يُسجَّل طلب الإغلاق؛ لا يغلق البرنامج المراكز بنفسه اليوم)، واكتب **مفتاح الإيقاف** من `stop-key.txt` (خطوة التثبيت 5 — وليس الرمز لمرة واحدة) واضغط **Stop the engine**. إذا تعذّر فتح اللوحة فإن **شاشة الإيقاف** على `/durdur` ("Winvestour · stop the engine") تفعل الشيء نفسه بلا جلسة ولا رمز: اختر تحت **What should happen?**، واكتب المفتاح في **Stop key** واضغط **Stop**. لا يُحفظ المفتاح في المتصفح أبداً.
+
+### 7. History و Technical
+
+يسرد **History** المراكز الأخيرة (الدخول، الحجم، العمولة، الإجمالي والصافي) وكل تغيير في الإعدادات (من، متى، القديم ← الجديد). ويحتفظ **Technical** بكل التفاصيل المقيسة التي تقرؤها اللوحة — بطاقات المحرك والتشغيل والصحة وأسطر المراكز ومصدر كل رقم؛ وبعض جُمل الخادم هذه ما زالت بالتركية حتى إصدار لاحق.
+
+### 8. ما ليس في هذا الإصدار
+
+لا إشعارات فورية: لا توجد في هذه النسخة قناة إشعارات مُعدّة (لا Firebase/FCM). القفل الحيوي موجود (**Settings → Biometric lock**، معطّل افتراضياً) ويحتاج إلى تحقق ببصمة الإصبع أو الوجه على الجهاز الذي تستخدمه. لا يوجد تطبيق أندرويد؛ اللوحة صفحة ويب يمكنك إضافتها إلى الشاشة الرئيسية لهاتفك. تشغيل البوت على حاسوبك غير مدعوم (يُشغَّل المحرك بواسطة Vercel Cron).
 
 <!-- readme:cost -->
 ## تكلفة التشغيل الشهرية
@@ -291,7 +320,7 @@ npm run rotate:encryption-key
 | **Binance** | بيانات السوق + إرسال الأوامر | **0 $** | وزن API مجاني. **عمولة التداول ليست في هذا الجدول** — فهي تكلفة الصفقة لا تكلفة تشغيل البرنامج، ويقيسها البرنامج منفصلة في كل صفقة. |
 | **الإجمالي** | | **≈ 9,60 – 9,90 $ / شهر** | مجموع البنود. الحد الأدنى: Upstash ضمن الحصة المجانية. الحد الأعلى: تجاوز الحصة. |
 
-**مع إيقاف المحرك / في تثبيت جديد (الإعدادات الافتراضية): ≈ 0,24 – 0,60 $ / شهر.** في التثبيت الجديد لا يمكن تشغيل المحرك (يولد فاصل النبضة فارغاً ويُرفض طلب التشغيل) ويولد سقف التكلفة فارغاً (لا يُستدعى الدماغ أبداً). في هذه الحالة ينتج البرنامج (محسوب من الكود، 2026-09-24): استدعاء خادم واحداً في الدقيقة (**1 440/يوم · 43 200/شهر**)، و**أمر Upstash واحداً** لكل استدعاء (يقرأ نسخة إذن التشغيل)، و**0 استعلام قاعدة بيانات** (لا يُوقَظ Neon أبداً)، و**0 استدعاء Claude**. الفاتورة: استدعاءات Vercel 43 200 × 0,60 $/M = 0,03 $ + الذاكرة 2 GB × 0,53–1,43 ث مقيسة × 43 200 ÷ 3600 = 12,7–34,3 GB-س × 0,0167 $ = 0,21–0,57 $ ⇒ **≈ 0,24–0,60 $**؛ زمن CPU النشط **لم يُقَس** (لم يُكتب له رقم هنا). قِيس أن كل فتح للوحة يضيف 5 استعلامات قاعدة بيانات، وإيقاظاً واحداً لقاعدة البيانات، وأمرَي Upstash؛ وعدد مرات فتحك لها يعود إليك.
+**مع إيقاف المحرك / في تثبيت جديد (الإعدادات الافتراضية): ≈ 0,24 – 0,60 $ / شهر.** في التثبيت الجديد لا يمكن تشغيل المحرك (يولد فاصل النبضة فارغاً ويُرفض طلب التشغيل) ويولد سقف التكلفة فارغاً (لا يُستدعى الدماغ أبداً). في هذه الحالة ينتج البرنامج (محسوب من الكود، 2026-09-24): استدعاء خادم واحداً في الدقيقة (**1 440/يوم · 43 200/شهر**)، و**أمر Upstash واحداً** لكل استدعاء (يتحقق مما إذا كان مسموحاً للمحرك بالعمل)، و**0 استعلام قاعدة بيانات** (لا يُوقَظ Neon أبداً)، و**0 استدعاء Claude**. الفاتورة: استدعاءات Vercel 43 200 × 0,60 $/M = 0,03 $ + الذاكرة 2 GB × 0,53–1,43 ث مقيسة × 43 200 ÷ 3600 = 12,7–34,3 GB-س × 0,0167 $ = 0,21–0,57 $ ⇒ **≈ 0,24–0,60 $**؛ زمن CPU النشط **لم يُقَس** (لم يُكتب له رقم هنا). قِيس أن كل فتح للوحة يضيف 5 استعلامات قاعدة بيانات، وإيقاظاً واحداً لقاعدة البيانات، وأمرَي Upstash؛ وعدد مرات فتحك لها يعود إليك.
 
 **متى قُرئ كل سعر (الأسعار تتغير — تحقق منها بنفسك):**
 - Neon `neon.com/pricing` — **2026-09-11** (Launch 0,106 $/CU-س)، أُعيدت قراءته في **2026-09-24** (دون تغيير؛ خطة Free 100 CU-ساعة/شهر/مشروع)
@@ -316,33 +345,54 @@ npm run rotate:encryption-key
 <!-- readme:faq -->
 ## الأسئلة الشائعة / حل المشكلات
 
-### يفشل نشر Vercel برسالة عن تعبيرات cron
+### يفشل النشر على Vercel برسالة حول تعبيرات cron
 
-أنت على خطة Hobby. تقول وثائق Vercel إن تعبير cron الذي يعمل أكثر من مرة يومياً *يفشل أثناء النشر*؛ جدولة هذا البرنامج كل دقيقة ولا يمكن تغييرها من اللوحة. انقل المشروع إلى فريق Pro، أو لا تشغّله على Vercel Hobby.
+أنت على خطة Hobby. تقول وثائق Vercel إن تعبير cron الذي يعمل أكثر من مرة يومياً *يفشل أثناء النشر*؛ وجدول هذا البرنامج كل دقيقة ولا يمكن تغييره من اللوحة. انقل المشروع إلى فريق Pro، أو لا تشغّله على Vercel Hobby.
 
-### لا يعمل الخادم ويطبع "ORTAM DEĞİŞKENİ SÖZLEŞMESİ İHLALİ — uygulama açılmıyor"
+### لا يبدأ الخادم ويطبع "ORTAM DEĞİŞKENİ SÖZLEŞMESİ İHLALİ — uygulama açılmıyor"
 
-متغير بيئة ناقص أو مشوَّه. تذكر الأسطر تحت تلك الرسالة كل متغير وسبب رفضه (مثلاً مفتاح رئيسي ليس 44 حرفاً من base64) — ولا تذكر قيمته أبداً. قارن أسماءك بـ `.env.example` وبالجدول تحت "ما تحتاجه".
+متغير بيئة مفقود أو مشوَّه (رسالة الخادم هذه ما زالت بالتركية). تذكر الأسطر تحت الرسالة كل متغير وسبب رفضه (مثلاً مفتاح رئيسي ليس 44 حرفاً بترميز base64) — ولا تذكر قيمته أبداً. قارن أسماءك بـ `.env.example` وبالجدول تحت "ما تحتاجه".
 
-### يجيب `/api/health` بـ `{"ok":true,...}` لكن اللوحة تطلب كلمة مرور، ونقاط الإعدادات تجيب 401 بـ `{"ok":false,"reason":"NO_SESSION"}`
+### يعيد `/api/health` القيمة `{"ok":true,...}` لكن اللوحة تطلب كلمة مرور، ونقاط نهاية الإعدادات تعيد 401 مع `{"ok":false,"reason":"NO_SESSION"}`
 
-هذه الحالة المتوقعة دون جلسة. اكتب كلمة مرور المالك في حقل **Parola** في اللوحة واضغط **Giriş yap** (انظر "الاستخدام الأول")؛ فتفتح الصفحة نفسها اللوحة دون إعادة تحميل.
+هذه هي الحالة المتوقعة بدون جلسة. اكتب كلمة مرور المالك في حقل **Password** في اللوحة واضغط **Sign in** (انظر "الاستخدام الأول")؛ فتفتح الصفحة نفسها اللوحة دون إعادة تحميل.
 
-### يجيب تشغيل المحرك بـ 409 والسبب **TICK_UNSET**
+### لا يظهر START، أو يقول المحرك "did not start: no tick interval is chosen"
 
-فاصل النبضة فارغ (يولد فارغاً). اختر أولاً فاصلاً في قسم اللوحة "Tik aralığı"، ثم أرسل طلب التشغيل مجدداً.
+لا يظهر START إلا عندما يكون كل سطر في "Before you start" ✓. اتبع روابط "First: …". إذا كان فاصل التكات فارغاً (يولد فارغاً) فاختر واحداً في **Settings → Tick interval** وشغّل من جديد. في التثبيت الجديد تولد حصتا المخاطرة فارغتين ولا يمكن إدخالهما من اللوحة في هذا الإصدار، لذا يبقى START مخفياً (انظر "الاستخدام الأول"، الخطوة 3).
 
-### يُرفض مفتاح Binance الخاص بي بـ **P1_WITHDRAWALS** أو **P1_UNIVERSAL_TRANSFER** أو **KEY_TYPE_NOT_ED25519**
+### يُرفض مفتاح Binance الخاص بي مع **P1_WITHDRAWALS** أو **P1_UNIVERSAL_TRANSFER** أو **KEY_TYPE_NOT_ED25519**
 
-أنشئ على Binance مفتاح API جديداً من نوع **Ed25519** مع **تعطيل** السحب والتحويل الشامل، وأضف ذلك المفتاح من اللوحة. في اللوحة يظهر الرفض بعبارة "Anahtar REDDEDİLDİ: …" (رُفض المفتاح) ويسمّي الإذن الواجب تعطيله. المفتاح المرفوض لا يُخزَّن ولا يُسجَّل.
+أنشئ في Binance مفتاح API جديداً من نوع **Ed25519** مع **تعطيل** السحب والتحويل الشامل، وأضفه في اللوحة. في اللوحة يظهر الرفض بصيغة "Key REFUSED: …" ويذكر الصلاحية الواجب تعطيلها. المفتاح المرفوض لا يُحفظ ولا يُسجَّل.
 
-### يجيب Binance بـ 451 "Service unavailable from a restricted location"
+### هل يجب أن أقيّد مفتاح Binance API بعنوان IP؟
 
-يحجب Binance الطلبات القادمة من مواقع في الولايات المتحدة. لهذا يثبّت `vercel.json` الدوال على منطقة `hnd1` (طوكيو)؛ إذا غيّرت المنطقة إلى منطقة أمريكية يفشل كل استدعاء إلى Binance بـ 451 ويبلّغ المحرك أن المنطقة محجوبة.
+ليس بعنوان ثابت في إعداد Vercel العادي: تستخدم دوال Vercel افتراضياً عناوين IP صادرة متغيّرة، والعناوين الصادرة الثابتة هي ميزة Static IPs المدفوعة في Vercel (100 دولار شهرياً لكل مشروع، وثائق Vercel قُرئت في 2026-09-26). بدون تقييد IP تسري قاعدة Binance نفسها (إعلان Binance بتاريخ 2021-07-26): صلاحية **Enable Spot & Margin Trading** للمفتاح صالحة **90 يوماً** من التفعيل ثم تُعطَّل تلقائياً — أعد تفعيلها في Binance وإلا فلن يتمكن المحرك من إرسال الأوامر. كما أفادت Binance بأن المفاتيح غير المقيّدة بـ IP التي لا تُستخدم 30 يوماً تُحذف؛ وتعرض اللوحة عدّاداً لـ 30 يوماً تحت **Settings → Binance API key → Technical details**.
 
-### هل يرسل هذا البرنامج شيئاً إلى المشرف عليه؟
+### فقدت كلمة المرور أو المصادِق (TOTP) أو مفتاحاً
 
-لا. يستدعي فقط Binance (بمفتاحك)، وNeon وUpstash الخاصين بك، وAnthropic (بمفتاحك). حركة الطرف الثالث الوحيدة التي لا يتحكم بها هي قياسات بناء Next.js عن بُعد الموصوفة في قسم التكلفة، ويمكنك إيقافها بـ `NEXT_TELEMETRY_DISABLED=1`.
+- **كلمة المرور أو TOTP:** أزح `owner-credentials.txt` القديم جانباً، وشغّل `npm run owner:credentials` مجدداً، واستبدل `OWNER_PASSWORD_HASH` و `OWNER_TOTP_SECRET` و `SESSION_SECRET` في Vercel بالأسطر الثلاثة من `vercel-env-owner.txt` الجديد، ثم أعد النشر. تنتهي كل الجلسات المفتوحة؛ أضف مفتاح إعداد TOTP الجديد إلى تطبيق المصادقة.
+- **مفتاح الإيقاف:** أزح `stop-key.txt` جانباً، وشغّل `npm run stop:credential`، وضع التجزئة الجديدة في `STOP_KEY_HASH`، ثم أعد النشر.
+- **فُقد المفتاح الرئيسي** (`ENCRYPTION_MASTER_KEY`): لم يعد ممكناً فك تشفير مفتاح Binance المحفوظ ولا استعادته. احذف مفتاح API ذاك في Binance، وأزح `encryption-master-key.txt` جانباً، وشغّل `npm run key:encryption-master`، وضع القيمة الجديدة في `ENCRYPTION_MASTER_KEY`، وأعد النشر، وأضف مفتاح Binance جديداً في اللوحة. إذا كان المفتاح الرئيسي القديم ما زال لديك وتريد تغييره فقط، فاستخدم التدوير (خطوة التثبيت 15) بدلاً من ذلك.
+- **فُقد المفتاح الخاص لـ Binance:** احذف مفتاح API ذاك في Binance، وأزح ملفات `.pem` القديمة جانباً، وشغّل `npm run key:generate`، وأنشئ مفتاح API جديداً بالمفتاح العام الجديد وأضفه في اللوحة.
+
+### كيف أزيل التثبيت وأتوقف عن الدفع؟
+
+أوقف المحرك أولاً (**STOP** في تبويب Status، أو `/durdur`). ثم:
+- احذف مفتاح API في Binance (Profile → API Management) — وهذا وحده ينهي كل وصول للتداول؛
+- احذف مشروع Vercel (Project → Settings → Delete Project) — وهذا يزيل المهمة المجدولة التي تعمل كل دقيقة؛ وإذا كان هذا المشروع سببك الوحيد لـ Vercel Pro فغيّر الخطة أو ألغها من إعدادات الفوترة في Vercel؛
+- احذف مشروع Neon وقاعدة بيانات Upstash من لوحتيهما؛
+- ألغِ مفتاح Anthropic API.
+
+الملفات في `winvestour-backup` تخص هذا التثبيت وحده؛ احذفها عندما لا تحتاجها.
+
+### تعيد Binance الرمز 451 "Service unavailable from a restricted location"
+
+تحظر Binance الطلبات القادمة من مواقع في الولايات المتحدة. لذلك يثبّت `vercel.json` الدوال في منطقة `hnd1` (طوكيو)؛ وإذا غيّرت المنطقة إلى منطقة أمريكية فسيفشل كل استدعاء إلى Binance بالرمز 451 ويُبلغ المحرك أن المنطقة محظورة.
+
+### هل يرسل هذا البرنامج شيئاً إلى القائم عليه؟
+
+لا. يستدعي فقط Binance (بمفتاحك)، و Neon و Upstash الخاصين بك، و Anthropic (بمفتاحك). حركة الطرف الثالث الوحيدة التي لا يتحكم بها هي قياس بناء Next.js الموصوف في قسم التكلفة، ويمكنك إيقافه بـ `NEXT_TELEMETRY_DISABLED=1`.
 
 ---
 

@@ -5,18 +5,13 @@
 //   U-3 — cihazda platform doğrulayıcı yoksa ekran "açık" gibi davranmaz ve olmayan bir yeteneğe yönlendirmez; durumu adıyla söyler.
 // SINIR (açık beyan): bu bir EKRAN kilididir. Sunucu onay imzasını doğrulamaz; API uçlarının erişim koruması değişmedi (oturum + hassas eylemde TOTP, S-8).
 // Kilit açıldığı bilgi YALNIZ açık sayfanın belleğinde durur: sayfa her açıldığında yeniden sorar. Yeniden sorma süresi ayardan gelir; NULL ise açık sayfa yeniden kilitlenmez.
+import { EN } from "@/lib/i18n/en";
+
 export type LockRead = { ok: true; enabled: boolean; repromptSeconds: number | null; updatedAt?: string | null } | { ok: false; detail?: string };
 export type LockState = "OFF" | "UNREADABLE" | "NO_PLATFORM" | "LOCKED";
 
-/** Ekranın cümleleri (U-3: ne oldu · ne demek · ne yapılabilir). Hiçbiri olmayan bir araca yönlendirmez. */
-export const LOCK_TEXT: Record<LockState | "FAILED" | "ENROLL_FAILED", string> = {
-  OFF: "Biyometrik kilit KAPALI: panel açılırken parmak izi ya da yüz doğrulaması sorulmaz.",
-  UNREADABLE: "Kilit ayarı okunamadı. Kilidin açık mı kapalı mı olduğu bilinmediği için panel içeriği gösterilmedi; okunamayan ayar \"kapalı\" sayılmaz. Motor bu sayfadan bağımsız çalışır ve durdurma bu kilide bağlı değildir.",
-  NO_PLATFORM: "Biyometrik kilit AÇIK ama bu cihazda parmak izi ya da yüz doğrulayıcısı yok. Kilit bu cihazda açılamaz, bu yüzden panel içeriği gösterilmedi. Durdurma bu kilide bağlı değildir.",
-  LOCKED: "Panel kilitli. İçeriği görmek için bu cihazın parmak izi ya da yüz doğrulamasını kullan. Durdurma bu kilide bağlı değildir.",
-  FAILED: "Doğrulama tamamlanmadı (iptal edildi, süre doldu ya da bu cihaz kilide henüz tanıtılmadı). Panel içeriği gösterilmedi.",
-  ENROLL_FAILED: "Bu cihaz kilide tanıtılamadı (iptal edildi ya da doğrulayıcı reddetti). Panel içeriği gösterilmedi.",
-};
+/** Ekranın cümleleri (U-3: ne oldu · ne demek · ne yapılabilir). Hiçbiri olmayan bir araca yönlendirmez. Tur 77 (K-C): metnin kaynağı TEK sözlüktür (`EN.lock.state`). */
+export const LOCK_TEXT: Record<LockState | "FAILED" | "ENROLL_FAILED", string> = EN.lock.state;
 
 /** SAF KARAR. Kilit kapalıysa doğrulayıcı SORULMAZ (bugünkü davranış); okunamayan ayar KAPALI sayılmaz (Ö-2); sonda düşerse doğrulayıcı YOK sayılır (açık davranılmaz). */
 export async function lockGate(read: LockRead, probe: () => Promise<boolean>): Promise<LockState> {
@@ -34,7 +29,7 @@ const nonce = () => crypto.getRandomValues(new Uint8Array(32));
 /** Bu cihazı kilide TANIT: platform doğrulayıcısında keşfedilebilir kimlik oluşturulur. Hiçbir şey saklanmaz ya da gönderilmez; kimliği doğrulayıcının kendisi tutar. */
 export async function enroll(): Promise<boolean> {
   try {
-    const c = await navigator.credentials.create({ publicKey: { challenge: nonce(), rp: { name: "Winvestour" }, user: { id: nonce().slice(0, 16), name: "sahip", displayName: "Winvestour sahibi" },
+    const c = await navigator.credentials.create({ publicKey: { challenge: nonce(), rp: { name: "Winvestour" }, user: { id: nonce().slice(0, 16), name: "owner", displayName: "Winvestour owner" },
       pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }], // COSE algoritma kimlikleri: ES256 · RS256 (WebAuthn standardı)
       authenticatorSelection: { authenticatorAttachment: "platform", residentKey: "required", userVerification: "required" } } });
     return c !== null;

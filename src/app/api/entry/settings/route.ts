@@ -8,6 +8,7 @@
 import { withAccess } from "@/lib/access";
 import { entrySentence, readEntrySettings, writeEntrySettings } from "@/lib/entry-settings";
 import { eventNote } from "@/lib/events";
+import { EN } from "@/lib/i18n/en";
 export const dynamic = "force-dynamic";
 // BÖLGE (Tur 12, G11 · S-5): bölge ABD DIŞI sabit; Edge YASAK (Edge bölgesi çağırana göre seçilir). Değer src/lib/region.ts BINANCE_REGION ile birebir aynı olmalı (kapı ölçer).
 export const runtime = "nodejs";
@@ -25,6 +26,6 @@ export const POST = withAccess({ cls: "sensitive", action: "ENTRY_SETTINGS_CHANG
   const view = await readEntrySettings();
   // Tur 65 (K1): açmada olay + bildirim sonucu yanıtta görünür (kod: "yazıldı#<id>" ya da "YAZILAMADI:<kod>"); kapatmada "yok".
   return Response.json({ ok: true, applied: w.changes, next: w.next, event: eventNote(w.event),
-    note: "giriş şalteri değişti; değişiklik ANINDA etkilidir (yeniden dağıtım gerekmez). Şalter AÇIK olsa bile emir çıkması için Binance anahtarı, sermaye, risk ayarları ve motorun çalışma izni de gerekir. Koruma, çıkış ve durdurma bu ayardan ETKİLENMEZ (K-1/K-2/K-7).",
+    note: EN.api.entryApplied,
     sentence: entrySentence(view), view }, { status: 200 });
 });

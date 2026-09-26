@@ -42,7 +42,7 @@ Questa copia non porta nulla del manutentore: il codice non legge alcun nome di 
 | `OWNER_PASSWORD_HASH` · `OWNER_TOTP_SECRET` · `SESSION_SECRET` | il file scritto dal passo d'installazione 4 |
 | `STOP_KEY_HASH` | il file scritto dal passo d'installazione 5 |
 | `ENCRYPTION_MASTER_KEY` | il file scritto dal passo d'installazione 6 |
-| `ENCRYPTION_KEY_VERSION` | `1` in un'installazione nuova (aumentato solo quando ruoti la chiave principale, passo 14) |
+| `ENCRYPTION_KEY_VERSION` | `1` in un'installazione nuova (aumentato solo quando ruoti la chiave principale, passo 15) |
 | `ENCRYPTION_MASTER_KEY_PREVIOUS` | lascia vuoto; usato solo durante una rotazione della chiave principale |
 | `ENGINE_MODE` | `CHEAP` (un tick al minuto dall'attività pianificata; l'unica modalità che questo README descrive) |
 
@@ -61,9 +61,9 @@ You are helping me install winvestour-bot, a self-hosted crypto trading bot for 
 
 3. Secrets. Never ask me to paste passwords, API keys, TOTP secrets or .env values into this chat; tell me which command generates them on my computer and where to paste them.
 
-4. Steps. Take me through the README's Installation steps below, in this order, with exactly these commands. Do not add, skip, reorder or change any command. Step 14 is optional and not part of the setup.
+4. Steps. Take me through the README's Installation steps below, in this order, with exactly these commands. Do not add, skip, reorder or change any command. Step 15 is optional and not part of the setup.
   1. Open the accounts you will need (about 30 minutes in total)
-     Check: you can sign in to all four services, and your Binance API key's permissions do not include withdrawals.
+     Check: you can sign in to all five services, and your Binance API key's permissions do not include withdrawals.
   2. Get the code onto your computer
      Check: the folder contains `package.json` and `.env.example`.
   3. Install the dependencies from the copy's lock file
@@ -71,53 +71,58 @@ You are helping me install winvestour-bot, a self-hosted crypto trading bot for 
      Check: the command ends without an error and a `node_modules` folder appears.
   4. Generate the owner password, the TOTP secret and the session secret
      Command: `npm run owner:credentials`
-     Check: the folder now contains sahip-kimlik.txt, vercel-env-sahip.json; the first holds your password and the TOTP setup key for your authenticator app, the second the three values for step 8. Nothing is printed on screen.
+     Check: the folder now contains owner-credentials.txt, vercel-env-owner.txt; the first holds your password and the TOTP setup key for your authenticator app, the second the three `NAME=value` lines for step 9. No value is printed on screen, only the file paths and short fingerprints.
   5. Generate the stop key (written to the same folder, not printed)
      Command: `npm run stop:credential`
-     Check: durdurma-anahtari.txt, vercel-env-STOP_KEY_HASH.txt appear in the folder; the first holds the raw stop key you will type on the stop screen, the second its hash for step 8.
+     Check: stop-key.txt, vercel-env-STOP_KEY_HASH.txt appear in the folder; the first holds the raw stop key you will type on the stop screen, the second its hash for step 9.
   6. Generate the master key that encrypts your exchange keys (written to the same folder, not printed)
      Command: `npm run key:encryption-master`
-     Check: sifreleme-ana-anahtari.txt, vercel-env-ENCRYPTION_MASTER_KEY.txt appear in the folder.
-  7. Create an empty PostgreSQL database
+     Check: encryption-master-key.txt, vercel-env-ENCRYPTION_MASTER_KEY.txt appear in the folder.
+  7. Generate the Ed25519 key pair for your Binance API key (written to the same folder; the private key is not printed)
+     Command: `npm run key:generate`
+     Check: binance-private-key.pem, binance-public-key.pem appear in the folder. On Binance choose Profile → API Management → Create API → Self-generated and paste the contents of the second file (the public key); you paste the first file (the private key) into the panel later ("First use").
+  8. Create an empty PostgreSQL database
      Check: two strings that start with `postgresql://`; the database has no tables yet.
-  8. Give every name in `.env.example` its value
-     Check: every name in `.env.example` has a value. If a required name is missing, the application stops at startup and names the missing variable.
-  9. Create the database tables
+  9. Give every name in `.env.example` its value — except `ENCRYPTION_MASTER_KEY_PREVIOUS`, which stays empty (it is used only during a master-key rotation)
+     Check: every name in `.env.example` except `ENCRYPTION_MASTER_KEY_PREVIOUS` has a value. If a required name is missing, the application stops at startup and names the missing variable.
+  10. Create the database tables
      Command: `npx prisma migrate deploy`
      Check: the output ends with `All migrations have been successfully applied.` A single migration named `0_baslangic` is applied; every settings table starts with one row; the risk settings are empty and switched off.
-  10. Check that the code builds on your computer (recommended before deploying)
+  11. Check that the code builds on your computer (recommended before deploying)
      Command: `npm run build`
      Check: the command ends with the list of routes and no error; a `.next` folder appears.
-  11. Start it locally
+  12. Start it locally
      Command: `npm start`
      Check: the page shows `{"ok":true,"service":"engine",...}`, and `http://localhost:3000/panel` opens and says that the panel needs a session. The environment contract is validated as the server starts: if a required name is missing or malformed the server does not come up, and the error names the missing variable, never its value. Stop the server with Ctrl+C. Running the bot on your own computer is not supported yet: the engine is triggered by Vercel Cron. Local start is only for checking the installation.
-  12. Deploy on Vercel
+  13. Deploy on Vercel
      Check: the deployment reaches Ready, and `https://<your-project>.vercel.app/api/health` returns `{"ok":true,...}`. On the Hobby plan the deployment fails instead, with a message that cron expressions running more often than once per day are not allowed.
-  13. Open the panel at `/panel` on your address, and the stop screen at `/durdur`
-     Check: both pages open (today the interface is in Turkish). The panel says it needs a session; the stop screen opens without a session and asks for the stop key. Continue with "First use".
-  14. OPTIONAL, NOT PART OF SETUP — MASTER KEY ROTATION
+  14. Open the panel at `/panel` on your address, and the stop screen at `/durdur`
+     Check: both pages open (the interface is in English). The panel says it needs a session; the stop screen opens without a session and asks for the stop key. Continue with "First use".
+  15. OPTIONAL, NOT PART OF SETUP — MASTER KEY ROTATION
      Command: `npm run rotate:encryption-key`
      Check: each row is decrypted with the old key and re-wrapped with the new one in its own transaction, and its version is raised; the new envelope is checked against the new key BEFORE anything is written. Once no row is left on the old version, `ENCRYPTION_MASTER_KEY_PREVIOUS` can be deleted. No key value is ever printed.
 
 5. Checks. After each step, ask me to compare what I see with the Check line of that step. If it does not match, stop, do not improvise a fix, and send me to the README section "FAQ / troubleshooting" and the wiki page FAQ.
 
-6. First use. When the deployment is Ready, guide me through the README section "First use" in this order (the panel is in Turkish; the README gives each button's name):
+6. First use. When the deployment is Ready, guide me through the README section "First use" in this order (the panel and the stop screen are in English; the README gives each screen's and button's name):
   1. Sign in (owner password, then a one-time code per sensitive action)
-  2. Add your Binance API key (withdrawals must be off)
-  3. Choose the tick interval (born empty)
-  4. Start and stop the engine
-  5. The entry switch (born ENABLED)
-  6. The cost cap and the Brain (born empty)
+  2. Read the Status tab: engine status and "Before you start"
+  3. Fill in the Settings tab
+  4. Capital
+  5. Start the engine
+  6. Stop the engine
+  7. History and Technical
+  8. What this release does not have
 ```
 
 <!-- readme:install -->
 ## Installazione
 
-Ognuno dei 14 passi qui sotto viene eseguito prima di ogni rilascio in una copia pulita di questo repository — i passi 1–13 dal controllo automatico d'installazione, il passo 14 dal controllo di rotazione della chiave. Un passo che non viene eseguito così non è scritto qui.
+Ognuno dei 15 passi qui sotto viene eseguito prima di ogni rilascio in una copia pulita di questo repository — i passi 1–14 dal controllo automatico d'installazione, il passo 15 dal controllo di rotazione della chiave. Un passo che non viene eseguito così non è scritto qui.
 
 1. Apri gli account necessari (circa 30 minuti in totale): un account **Neon** (database PostgreSQL), un account **Upstash** (Redis), un account **Vercel** con **piano Pro** (l'app esegue un'attività pianificata ogni minuto; con il piano gratuito Hobby il deployment fallisce — vedi "Cosa serve"), una chiave API **Anthropic** e una chiave API **Binance** creata **senza permesso di prelievo**.
 
-Risultato atteso: puoi accedere a tutti e quattro i servizi e i permessi della tua chiave API Binance non includono i prelievi.
+Risultato atteso: puoi accedere a tutti e cinque i servizi e i permessi della tua chiave API Binance non includono i prelievi.
 
 2. Porta il codice sul tuo computer: nella pagina di questo repository scegli **Code → Download ZIP** (oppure clonalo con il tuo client git), estrailo e apri un terminale in quella cartella.
 
@@ -131,13 +136,13 @@ npm ci
 
 Risultato atteso: il comando termina senza errori e compare una cartella `node_modules`.
 
-4. Genera la password del proprietario, il segreto TOTP e il segreto di sessione. I valori non vengono stampati; vengono scritti in una cartella fuori dal repository (predefinita: `winvestour-yedek` nella tua cartella home, `-- --dir <cartella>` per un altro posto):
+4. Genera la password del proprietario, il segreto TOTP e il segreto di sessione. Nessun valore viene stampato, solo percorsi dei file e brevi impronte; i valori vengono scritti in una cartella fuori dal repository (predefinita: `winvestour-backup` nella tua cartella home, `-- --dir <cartella>` per un altro posto):
 
 ```sh
 npm run owner:credentials
 ```
 
-Risultato atteso: la cartella ora contiene `sahip-kimlik.txt`, `vercel-env-sahip.json`; il primo file contiene la tua password e la chiave di configurazione TOTP per la tua app di autenticazione, il secondo i tre valori per il passo 8. Sullo schermo non viene stampato nulla.
+Risultato atteso: la cartella ora contiene `owner-credentials.txt`, `vercel-env-owner.txt`; il primo file contiene la tua password e la chiave di configurazione TOTP per la tua app di autenticazione, il secondo le tre righe `NAME=value` per il passo 9. Sullo schermo non viene stampato alcun valore, solo i percorsi dei file e brevi impronte.
 
 5. Genera la chiave di arresto (scritta nella stessa cartella, non stampata):
 
@@ -145,7 +150,7 @@ Risultato atteso: la cartella ora contiene `sahip-kimlik.txt`, `vercel-env-sahip
 npm run stop:credential
 ```
 
-Risultato atteso: nella cartella compaiono `durdurma-anahtari.txt`, `vercel-env-STOP_KEY_HASH.txt`; il primo contiene la chiave di arresto in chiaro che digiterai nella schermata di arresto, il secondo il suo hash per il passo 8.
+Risultato atteso: nella cartella compaiono `stop-key.txt`, `vercel-env-STOP_KEY_HASH.txt`; il primo contiene la chiave di arresto in chiaro che digiterai nella schermata di arresto, il secondo il suo hash per il passo 9.
 
 6. Genera la chiave principale che cifra le tue chiavi dell'exchange (scritta nella stessa cartella, non stampata). Se questa chiave va persa, le righe cifrate non potranno più essere aperte; conserva una seconda copia nel tuo gestore di password:
 
@@ -153,17 +158,25 @@ Risultato atteso: nella cartella compaiono `durdurma-anahtari.txt`, `vercel-env-
 npm run key:encryption-master
 ```
 
-Risultato atteso: nella cartella compaiono `sifreleme-ana-anahtari.txt`, `vercel-env-ENCRYPTION_MASTER_KEY.txt`.
+Risultato atteso: nella cartella compaiono `encryption-master-key.txt`, `vercel-env-ENCRYPTION_MASTER_KEY.txt`.
 
-7. Crea un database PostgreSQL vuoto: in Neon crea un progetto e copia le sue due stringhe di connessione — quella con pool diventa `DATABASE_URL`, quella diretta (senza pool) diventa `DIRECT_URL`.
+7. Genera la coppia di chiavi Ed25519 per la tua chiave API Binance (scritta nella stessa cartella; la chiave privata non viene stampata):
+
+```sh
+npm run key:generate
+```
+
+Risultato atteso: nella cartella compaiono `binance-private-key.pem`, `binance-public-key.pem`. Su Binance scegli Profile → API Management → Create API → **Self-generated** e incolla il contenuto del secondo file (la chiave pubblica); il primo file (la chiave privata) lo incolli più tardi nel pannello ("Primo utilizzo").
+
+8. Crea un database PostgreSQL vuoto: in Neon crea un progetto e copia le sue due stringhe di connessione — quella con pool diventa `DATABASE_URL`, quella diretta (senza pool) diventa `DIRECT_URL`. Scegli la regione **AWS Asia Pacific (Singapore)** (`aws-ap-southeast-1`): le funzioni dell'app girano a Tokyo (`hnd1`, vedi `vercel.json`) e Neon non ha una regione a Tokyo; Singapore è la più vicina (elenco regioni di Neon, letto il 2026-09-26).
 
 Risultato atteso: due stringhe che iniziano con `postgresql://`; il database non ha ancora tabelle.
 
-8. Dai a ogni nome in `.env.example` il suo valore. Da dove viene ciascun valore è nella tabella sotto "Cosa serve"; `OWNER_PASSWORD_HASH`, `OWNER_TOTP_SECRET`, `SESSION_SECRET`, `STOP_KEY_HASH`, `ENCRYPTION_MASTER_KEY` vengono dai file dei passi 4–6. Per il deployment inseriscili in Vercel sotto **Settings → Environment Variables**; per un'esecuzione locale metti gli stessi nomi in un file `.env` accanto a `package.json` (git ignora quel file). I valori non entrano mai nel repository.
+9. Dai a ogni nome in `.env.example` il suo valore — tranne `ENCRYPTION_MASTER_KEY_PREVIOUS`, che resta vuoto (si usa solo durante una rotazione della chiave principale). Da dove viene ciascun valore è nella tabella sotto "Cosa serve"; `OWNER_PASSWORD_HASH`, `OWNER_TOTP_SECRET`, `SESSION_SECRET`, `STOP_KEY_HASH`, `ENCRYPTION_MASTER_KEY` vengono dai file dei passi 4–6. Per il deployment inseriscili in Vercel sotto **Settings → Environment Variables**; per un'esecuzione locale metti gli stessi nomi in un file `.env` accanto a `package.json` (git ignora quel file). I valori non entrano mai nel repository.
 
-Risultato atteso: ogni nome in `.env.example` ha un valore. Se manca un nome obbligatorio, l'applicazione si ferma all'avvio e nomina la variabile mancante.
+Risultato atteso: ogni nome in `.env.example` tranne `ENCRYPTION_MASTER_KEY_PREVIOUS` ha un valore. Se manca un nome obbligatorio, l'applicazione si ferma all'avvio e nomina la variabile mancante.
 
-9. Crea le tabelle del database. Eseguilo una volta dal tuo computer con `DIRECT_URL` impostato (in `.env` o nel terminale); Vercel ripete lo stesso comando a ogni deployment, il che è innocuo:
+10. Crea le tabelle del database. Eseguilo una volta dal tuo computer con `DIRECT_URL` impostato (in `.env` o nel terminale); Vercel ripete lo stesso comando a ogni deployment, il che è innocuo:
 
 ```sh
 npx prisma migrate deploy
@@ -171,7 +184,7 @@ npx prisma migrate deploy
 
 Risultato atteso: l'output termina con `All migrations have been successfully applied.` Viene applicata una sola migrazione chiamata `0_baslangic`; ogni tabella di impostazioni parte con una riga; le impostazioni di rischio sono vuote e disattivate.
 
-10. Verifica che il codice si compili sul tuo computer (consigliato prima del deployment):
+11. Verifica che il codice si compili sul tuo computer (consigliato prima del deployment):
 
 ```sh
 npm run build
@@ -179,7 +192,7 @@ npm run build
 
 Risultato atteso: il comando termina con l'elenco delle route e senza errori; compare una cartella `.next`.
 
-11. Avviala in locale. Quando l'applicazione è attiva, apri `http://localhost:3000/api/health` nel browser:
+12. Avviala in locale. Quando l'applicazione è attiva, apri `http://localhost:3000/api/health` nel browser:
 
 ```sh
 npm start
@@ -187,15 +200,15 @@ npm start
 
 Risultato atteso: la pagina mostra `{"ok":true,"service":"engine",...}`, e `http://localhost:3000/panel` si apre e dice che il pannello richiede una sessione. All'avvio viene convalidato il contratto d'ambiente: se un nome obbligatorio manca o è malformato il server non parte, e l'errore nomina la variabile mancante, mai il suo valore. Ferma il server con Ctrl+C. Far girare il bot sul tuo computer non è ancora supportato: il motore è attivato da Vercel Cron. L'avvio locale serve solo a verificare l'installazione.
 
-12. Fai il deployment su Vercel: invia la tua copia al tuo account GitHub, poi in Vercel scegli **Add New → Project → Import** per quel repository, mantieni il preset del framework **Next.js**, aggiungi le variabili d'ambiente del passo 8 e premi **Deploy**. Vercel esegue lo script `vercel-build`: prima rifiuta qualsiasi migrazione che cancellerebbe dati, poi crea le tabelle e compila.
+13. Fai il deployment su Vercel: invia la tua copia al tuo account GitHub, poi in Vercel scegli **Add New → Project → Import** per quel repository, mantieni il preset del framework **Next.js**, aggiungi le variabili d'ambiente del passo 9 e premi **Deploy**. Vercel esegue lo script `vercel-build`: prima rifiuta qualsiasi migrazione che cancellerebbe dati, poi crea le tabelle e compila.
 
 Risultato atteso: il deployment raggiunge **Ready** e `https://<tuo-progetto>.vercel.app/api/health` restituisce `{"ok":true,...}`. Con il piano Hobby il deployment invece fallisce, con un messaggio che dice che le espressioni cron eseguite più di una volta al giorno non sono consentite.
 
-13. Apri il pannello a `/panel` sul tuo indirizzo e la schermata di arresto a `/durdur`.
+14. Apri il pannello a `/panel` sul tuo indirizzo e la schermata di arresto a `/durdur`.
 
-Risultato atteso: entrambe le pagine si aprono (oggi l'interfaccia è in turco). Il pannello dice che richiede una sessione; la schermata di arresto si apre senza sessione e chiede la chiave di arresto. Continua con "Primo utilizzo".
+Risultato atteso: entrambe le pagine si aprono (l'interfaccia è in inglese). Il pannello dice che richiede una sessione; la schermata di arresto si apre senza sessione e chiede la chiave di arresto. Continua con "Primo utilizzo".
 
-14. FACOLTATIVO, NON FA PARTE DELL'INSTALLAZIONE — ROTAZIONE DELLA CHIAVE PRINCIPALE. Se la tua chiave principale è trapelata o vuoi cambiarla: metti da parte il vecchio file di backup, esegui di nuovo il passo 6 per generare una NUOVA chiave, passa la nuova come `ENCRYPTION_MASTER_KEY`, la vecchia come `ENCRYPTION_MASTER_KEY_PREVIOUS`, e aumenta `ENCRYPTION_KEY_VERSION` di uno. Per impostazione predefinita è una PROVA A SECCO: non viene scritto nulla, si misura solo la decifrabilità; aggiungi `-- --write` per scrivere davvero:
+15. FACOLTATIVO, NON FA PARTE DELL'INSTALLAZIONE — ROTAZIONE DELLA CHIAVE PRINCIPALE. Se la tua chiave principale è trapelata o vuoi cambiarla: metti da parte il vecchio file di backup, esegui di nuovo il passo 6 per generare una NUOVA chiave, passa la nuova come `ENCRYPTION_MASTER_KEY`, la vecchia come `ENCRYPTION_MASTER_KEY_PREVIOUS`, e aumenta `ENCRYPTION_KEY_VERSION` di uno. Per impostazione predefinita è una PROVA A SECCO: non viene scritto nulla, si misura solo la decifrabilità; aggiungi `-- --write` per scrivere davvero:
 
 ```sh
 npm run rotate:encryption-key
@@ -206,33 +219,45 @@ Risultato: ogni riga viene decifrata con la vecchia chiave e riavvolta con la nu
 <!-- readme:first-use -->
 ## Primo utilizzo
 
-Oggi l'interfaccia è solo in **turco**. Accedi dalla pagina del pannello con la password del proprietario e aggiungi la chiave Binance nel pannello; avviare il motore si fa ancora con una richiesta HTTP (dalla console per sviluppatori del browser o da qualsiasi client HTTP) mentre sei connesso. Ogni passo qui sotto descrive esattamente cosa fa il software oggi; nulla qui è pianificato o promesso.
+Il pannello e la schermata di arresto sono in **inglese** (altre lingue sono previste). Tutto quello che segue descrive esattamente ciò che il software fa oggi; niente qui è previsto o promesso. Il pannello ha quattro schede — **Status · Settings · History · Technical** — e si apre su **Status**. I nomi di schermate e pulsanti sono scritti sotto esattamente come appaiono (in inglese).
 
-**Impostazioni:** ogni impostazione del pannello — cosa fa, il suo valore predefinito, se richiede il codice monouso, quando ha effetto — è descritta nella pagina wiki [Settings guide](https://github.com/akaytaran/winvestour-bot/wiki/Settings-guide) (in inglese).
+**Impostazioni:** ogni impostazione del pannello — cosa fa, il suo valore predefinito, se richiede il codice monouso, quando ha effetto — è descritta nella pagina [Settings guide](https://github.com/akaytaran/winvestour-bot/wiki/Settings-guide) del wiki (in inglese); le schermate sono mostrate nella [Panel guide](https://github.com/akaytaran/winvestour-bot/wiki/Panel-guide).
 
-### 1. Accedi (password del proprietario, poi un codice monouso per ogni azione sensibile)
+### 1. Accesso (password del proprietario, poi un codice monouso per ogni azione sensibile)
 
-Apri `https://<il-tuo-progetto>.vercel.app/panel` nel browser. Senza sessione il pannello mostra un solo campo **Parola** (password) e un pulsante **Giriş yap** (accedi): scrivi la password dal file del passo 4 e premi il pulsante — la stessa pagina apre quindi il pannello. La sessione dura **8 ore**. Una password errata mostra "Parola yanlış, yeniden dene." (password errata, riprova). Dopo **5** tentativi errati l'accesso e ogni azione sensibile vengono bloccati per **15 minuti** e il pannello mostra "Çok fazla yanlış deneme yapıldı; giriş kilitlendi, en geç 15 dakika sonra yeniden dene." (troppi tentativi errati, riprova entro al massimo 15 minuti) — durante il blocco anche la password corretta viene rifiutata; la schermata di arresto non viene mai bloccata. Per chiudere la sessione premi **Çıkış yap** (esci) in cima al pannello. Le azioni sensibili (aggiungere una chiave, avviare il motore, aprire l'interruttore di ingresso, alzare un tetto di costo) richiedono inoltre il **codice a 6 cifre** corrente della tua app di autenticazione, inviato nell'header di richiesta `x-totp-code` — i moduli del pannello lo chiedono in un campo etichettato "Tek kullanımlık kod" (codice monouso). Aggiungi una volta il segreto TOTP dal file del passo 4 alla tua app di autenticazione.
+Apri `https://<tuo-progetto>.vercel.app/panel`. Senza sessione il pannello mostra un solo campo **Password** e un pulsante **Sign in**: scrivi la password di `owner-credentials.txt` (passo di installazione 4) e premi il pulsante — la stessa pagina apre poi il pannello. Una sessione dura **8 ore**. Una password sbagliata mostra "Wrong password, try again.". Dopo **5** tentativi sbagliati l'accesso e ogni azione sensibile sono bloccati per **15 minuti** ("Too many wrong attempts: sign-in is locked. Try again in at most 15 minutes."); la schermata di arresto non viene mai bloccata. **Sign out** è in alto nel pannello. Le azioni sensibili (aggiungere una chiave, avviare il motore, cambiare le entrate, aumentare un costo) chiedono anche il codice a 6 cifre attuale della tua app di autenticazione, nel campo "One-time code (6 digits) — from your authenticator app". Aggiungi una volta la chiave di configurazione TOTP di `owner-credentials.txt` alla tua app di autenticazione.
 
-### 2. Aggiungi la tua chiave API Binance (i prelievi devono essere disattivati)
+### 2. Leggi la scheda Status: stato del motore e "Before you start"
 
-Prima crea la chiave su Binance: genera sul tuo computer una coppia di chiavi **Ed25519** con il generatore di chiavi di Binance (la chiave privata resta a te), poi su Binance apri Profilo → API Management → Create API → **Self-generated**, incolla la chiave pubblica, dai un nome e completa la verifica a due fattori; Binance ti mostra allora la API key. Permessi: lettura **attiva** (una chiave senza lettura viene rifiutata), trading spot **attivo** perché il motore possa inviare ordini, futures solo se usi i futures, prelievi e trasferimento universale **disattivati**. Poi nel pannello apri la sezione **"Binance API anahtarı"** (chiave API Binance) → **"Anahtar ekle (tek kullanımlık kod ister)"** (aggiungi chiave, serve il codice monouso), compila **Ad** (un nome solo per te), **API key**, **Özel anahtar** (l'intera chiave privata Ed25519 in formato PEM — il campo resta nascosto) e **Tek kullanımlık kod** e premi **"Anahtarı doğrula ve kaydet"** (verifica e salva). L'app controlla i permessi della chiave su Binance prima di salvare qualsiasi cosa: una chiave con prelievi o trasferimento universale attivi viene rifiutata e non salvata da nessuna parte, e il pannello dice quale permesso disattivare; anche una chiave privata che non è Ed25519 PEM viene rifiutata. Una chiave accettata è salvata cifrata con la tua chiave master; nessuna sua parte viene mai mostrata, stampata o restituita. La stessa sezione mostra poi se una chiave è salvata, i suoi permessi come li ha riportati Binance, quando è stata cambiata l'ultima volta e il contatore dei 30 giorni (Binance elimina una chiave senza restrizione IP dopo 30 giorni senza ordini — misurato). Con una nuova chiave il motore usa la più recente; la vecchia non viene chiusa su Binance — eliminala lì tu stesso.
+La scheda **ENGINE STATUS** in alto mostra uno di quattro stati, letto dal server: **Running** (in funzione) · **Stopped** (fermato da te o da una regola di protezione) · **Not running** (mai avviato, o il permesso di funzionamento è scaduto) · **Unknown** (lo stato non è leggibile; viene offerto STOP, non START). Sotto, **Before you start** elenca ciò che serve al motore: Binance key · Tick interval · Cost cap · Infrastructure cost · Single position share · Total exposure — ciascuna ✓ (fatto), ✗ (manca) o ? (non leggibile) — più due righe informative: Entry switch e Capital. Finché una riga è ✗ o ?, il pulsante **START** è nascosto e un link "First: …" porta all'impostazione. Gli avvisi (ad esempio un ordine di protezione mancante) compaiono sotto "Look at these first"; "At a glance" mostra l'ultimo giro del motore, le posizioni aperte e la commissione pagata nel periodo.
 
-### 3. Scegli l'intervallo di tick (nasce vuoto)
+### 3. Compila la scheda Settings
 
-Apri `/panel` con la sessione e trova la sezione **"Tik aralığı — motor ne sıklıkla çalışır"** (intervallo di tick). Le scelte sono **ogni 1, 2 o 3 minuti**. In un'installazione nuova l'intervallo è **vuoto** e il motore non può essere avviato finché non ne scegli uno. Una modifica ha effetto **entro 20 minuti al più tardi**, oppure al riavvio del motore; scegliere un intervallo meno frequente non richiede codice, uno più frequente chiede il codice monouso.
+- **Binance API key:** crea prima la chiave. Genera la coppia Ed25519 con `npm run key:generate` (passo di installazione 7) o con il generatore di chiavi di Binance; su Binance apri Profile → API Management → Create API → **Self-generated**, incolla la chiave pubblica, dai un nome e completa la verifica a due fattori. Permessi: lettura **attiva** (una chiave senza lettura viene rifiutata), trading spot **attivo** perché il motore possa inviare ordini, futures solo se li usi, prelievi e trasferimento universale **disattivati**. Nel pannello apri **Settings → Binance API key → Add a key (needs the one-time code)**, compila **Name**, **API key**, **Private key** (tutto il contenuto di `binance-private-key.pem`; il campo resta nascosto) e il codice monouso, e premi **Verify and save the key**. L'app controlla i permessi su Binance prima di salvare qualsiasi cosa; una chiave con prelievi o trasferimento universale attivi viene rifiutata ("Key REFUSED: …") e non viene salvata da nessuna parte. Una chiave accettata viene salvata cifrata con la tua chiave principale e non viene mai più mostrata. Con una chiave nuova il motore usa la più recente; elimina tu le vecchie chiavi su Binance.
+- **Tick interval — how often the engine runs:** nasce **vuoto**; senza di esso il motore non si avvia. Apri **Change (less frequent needs no code; more frequent needs a code)** e scegli uno dei pulsanti: **ogni 1, 2 o 3 minuti**. Una modifica ha effetto **entro 20 minuti al più tardi** o al successivo avvio del motore.
+- **Monthly cost cap:** nasce **vuoto**; finché è vuoto il motore decisionale (Claude) **non** viene chiamato affatto. Per farlo funzionare apri **Change the cap (…)**, spunta **Monthly total cost cap** e **Monthly infrastructure cost (the sum of your own Neon, Vercel and Upstash bills)** e scrivi entrambi in dollari al mese. Abbassare o svuotare non richiede codice; aumentare richiede il codice monouso. **Decision engine — model · frequency · candidates · candles** mostra il modello (`claude-opus-5` per impostazione predefinita) e ogni quanto viene chiamato (ogni 24 ore per impostazione predefinita).
+- **Risk shares — single position · total exposure:** mostrate in sola lettura. Una nuova installazione nasce con entrambe **vuote**, e questa versione **non ha un controllo del pannello** che le scriva: in una nuova installazione queste due righe di "Before you start" restano ✗ e **START resta nascosto**. Una versione successiva aggiunge il controllo.
+- **Entry switch:** nasce **ON** — il motore può aprire nuove posizioni di sua iniziativa una volta impostato tutto il resto. Premi l'interruttore per cambiarlo; accenderlo mostra "Read before turning it on" con l'avviso in cima a questa pagina e una casella di spunta, ed entrambe le direzioni chiedono il codice monouso. Su OFF il motore continua a funzionare, uscite e protezione proseguono, ma non viene aperta alcuna nuova posizione e il motore decisionale non viene chiamato.
 
-### 4. Avviare e fermare il motore
+### 4. Capitale
 
-**Avvio:** oggi nel pannello non c'è un pulsante di avvio. Invia `POST /api/engine/resume` con il cookie di sessione e l'header `x-totp-code`. Se l'intervallo di tick è ancora vuoto la richiesta viene rifiutata con **TICK_UNSET** (HTTP 409) e nulla cambia. **Arresto:** apri `/durdur` — **non** richiede sessione né codice. Digita la chiave di arresto in chiaro dal file del passo 5, scegli sotto **"Ne olsun?"** o **"Yalnız durdur"** (solo fermare: le posizioni aperte e i loro ordini di protezione sull'exchange restano come sono) o **"Durdur ve kapatma iste"** (fermare e registrare una richiesta di chiusura; oggi il software non chiude le posizioni da solo), e invia. La chiave non viene mai salvata nel browser.
+Il motore opera con gli **USDT liberi nel tuo portafoglio spot Binance**, quindi la chiave richiede **Enable Spot & Margin Trading**. La dimensione di una posizione è **Single position share** × il saldo USDT libero. Binance rifiuta un ordine sotto il valore minimo d'ordine della coppia (il suo filtro NOTIONAL); il motore legge questo minimo da Binance prima di ogni ordine — sull'account del manutentore era **5 USDT** per la maggior parte delle coppie verificate e 1 USDT per alcune (misurato il 2026-09-10). Se quota × saldo libero è inferiore, nessuna posizione viene aperta; il motore continua a funzionare e a proteggere. Il pannello non si collega a Binance, quindi qui non può confrontare il saldo libero di oggi con quel minimo: la sua riga **Capital** mostra l'ultimo valore del conto misurato. Quanto depositare lo decidi tu.
 
-### 5. L'interruttore di ingresso (nasce ABILITATO)
+### 5. Avvia il motore
 
-La sezione del pannello **"Giriş şalteri"** mostra se il motore può inviare ordini di **ingresso**. In un'installazione nuova nasce **ABILITATO**, ma nessun ordine viene inviato finché la chiave Binance, il capitale e le impostazioni di rischio sono vuoti. Aprendo **"Bu ayarı değiştir (tek kullanımlık kod ister)"** puoi cambiarlo; **attivarlo** mostra il testo di avvertimento in cima a questa pagina con una casella che devi spuntare, e chiede il codice monouso. Disattivarlo non chiude le posizioni aperte e non ferma il motore — per quello usa `/durdur`.
+Quando ogni riga di "Before you start" è ✓, la scheda Status mostra un pulsante verde **START**. Premilo, scrivi il codice in "One-time code (6 digits) — the code from your authenticator app" e premi **Start the engine**. La scheda mostra poi **Running** e "Start accepted: the run permit was granted until …" — lo stato viene riletto dal server, non indovinato. Se non è scelto alcun intervallo di tick, la risposta è "The engine did not start: no tick interval is chosen." e nulla cambia. Un ordine prudente: prima metti l'**Entry switch** su OFF, avvia il motore e osserva **Running** per un giorno, poi decidi se attivare le entrate.
 
-### 6. Il tetto di costo e il Cervello (nasce vuoto)
+### 6. Ferma il motore
 
-La sezione **"Aylık maliyet tavanı"** contiene il tetto di costo mensile in dollari. Nasce **vuoto**, e finché è vuoto il Cervello (Claude) **non** viene chiamato affatto ("Tavan boşken davranış": il Cervello è spento). Inserisci un tetto quando vuoi che la generazione giornaliera delle regole funzioni; abbassare o svuotare un tetto non richiede codice, alzarlo chiede il codice monouso. La sezione **"Karar motoru ayarı"** mostra il modello (`claude-opus-5` per impostazione predefinita), la frequenza delle chiamate (ogni 24 ore per impostazione predefinita) e il numero di candidati e di candele.
+Mentre il motore funziona, la scheda mostra un pulsante rosso **STOP**: scegli **Stop only** (nessuna nuova posizione; le posizioni aperte e i loro ordini di protezione sulla borsa restano come sono) o **Stop and request closing** (la richiesta di chiusura viene registrata; oggi il software non chiude le posizioni da solo), scrivi la **chiave di arresto** di `stop-key.txt` (passo di installazione 5 — non il codice monouso) e premi **Stop the engine**. Se il pannello non si apre, la **schermata di arresto** su `/durdur` ("Winvestour · stop the engine") fa lo stesso senza sessione né codice: scegli sotto **What should happen?**, scrivi la chiave in **Stop key** e premi **Stop**. La chiave non viene mai salvata nel browser.
+
+### 7. History e Technical
+
+**History** elenca le posizioni recenti (entrata, dimensione, commissione, lordo e netto) e ogni modifica delle impostazioni (chi, quando, vecchio → nuovo). **Technical** conserva tutto il dettaglio misurato che il pannello legge — schede di motore, giro e salute, righe delle posizioni e da dove viene ogni numero; alcune di queste frasi del server sono ancora in turco fino a una versione successiva.
+
+### 8. Cosa non c'è in questa versione
+
+Nessuna notifica push: in questa copia non è configurato alcun canale di notifica (niente Firebase/FCM). Il blocco biometrico esiste (**Settings → Biometric lock**, disattivato per impostazione predefinita) e richiede un controllo di impronta o volto sul dispositivo che usi. Non c'è un'app Android; il pannello è una pagina web che puoi aggiungere alla schermata principale del telefono. Far girare il bot sul tuo computer non è supportato (il motore è attivato da Vercel Cron).
 
 <!-- readme:cost -->
 ## Costo mensile di esercizio
@@ -253,7 +278,7 @@ Ogni numero qui viene dalle misurazioni di questo software sul deployment del ma
 | **Binance** | dati di mercato + invio ordini | **0 $** | Il peso API è gratuito. **La commissione di trading non è in questa tabella** — è il costo di un'operazione, non dell'esecuzione del software, e il software la misura separatamente a ogni operazione. |
 | **TOTALE** | | **≈ 9,60 – 9,90 $ / mese** | La somma delle righe. Estremo inferiore: Upstash entro la quota gratuita. Estremo superiore: quota superata. |
 
-**Con il motore fermo / in un'INSTALLAZIONE NUOVA (impostazioni predefinite): ≈ 0,24 – 0,60 $ / mese.** In un'installazione nuova il motore non può essere avviato (l'intervallo di tick nasce vuoto e la richiesta di avvio viene rifiutata) e il tetto di costo nasce vuoto (il Cervello non viene mai chiamato). In quello stato il software produce (contato dal codice, 2026-09-24): un'invocazione del server al minuto (**1 440/giorno · 43 200/mese**), **1 comando Upstash** per invocazione (legge la copia del permesso di esecuzione), **0 query al database** (Neon non viene mai svegliato), **0 chiamate Claude**. Il conto: invocazioni Vercel 43 200 × 0,60 $/M = 0,03 $ + memoria 2 GB × 0,53–1,43 s misurati × 43 200 ÷ 3600 = 12,7–34,3 GB-h × 0,0167 $ = 0,21–0,57 $ ⇒ **≈ 0,24–0,60 $**; il tempo CPU attivo **non è stato misurato** (qui non è scritto alcun numero). Ogni apertura del pannello, misurata, aggiunge 5 query al database, 1 risveglio del database e 2 comandi Upstash; quanto spesso lo apri dipende da te.
+**Con il motore fermo / in un'INSTALLAZIONE NUOVA (impostazioni predefinite): ≈ 0,24 – 0,60 $ / mese.** In un'installazione nuova il motore non può essere avviato (l'intervallo di tick nasce vuoto e la richiesta di avvio viene rifiutata) e il tetto di costo nasce vuoto (il Cervello non viene mai chiamato). In quello stato il software produce (contato dal codice, 2026-09-24): un'invocazione del server al minuto (**1 440/giorno · 43 200/mese**), **1 comando Upstash** per invocazione (controlla se il motore può funzionare), **0 query al database** (Neon non viene mai svegliato), **0 chiamate Claude**. Il conto: invocazioni Vercel 43 200 × 0,60 $/M = 0,03 $ + memoria 2 GB × 0,53–1,43 s misurati × 43 200 ÷ 3600 = 12,7–34,3 GB-h × 0,0167 $ = 0,21–0,57 $ ⇒ **≈ 0,24–0,60 $**; il tempo CPU attivo **non è stato misurato** (qui non è scritto alcun numero). Ogni apertura del pannello, misurata, aggiunge 5 query al database, 1 risveglio del database e 2 comandi Upstash; quanto spesso lo apri dipende da te.
 
 **Quando ogni prezzo è stato letto (i prezzi cambiano — verificali tu stesso):**
 - Neon `neon.com/pricing` — **2026-09-11** (Launch 0,106 $/CU-h), riletto il **2026-09-24** (invariato; piano Free 100 CU-ore/mese/progetto)
@@ -280,31 +305,52 @@ Ogni numero qui viene dalle misurazioni di questo software sul deployment del ma
 
 ### Il deployment su Vercel fallisce con un messaggio sulle espressioni cron
 
-Sei sul piano Hobby. La documentazione di Vercel dice che un'espressione cron che gira più di una volta al giorno *fallisce durante il deployment*; la pianificazione di questo software è ogni minuto e non può essere cambiata dal pannello. Sposta il progetto in un team Pro, oppure non eseguirlo su Vercel Hobby.
+Sei sul piano Hobby. La documentazione di Vercel dice che un'espressione cron eseguita più di una volta al giorno *fallisce durante il deployment*; la pianificazione di questo software è ogni minuto e non si può cambiare dal pannello. Sposta il progetto in un team Pro, oppure non eseguirlo su Vercel Hobby.
 
 ### Il server non parte e stampa "ORTAM DEĞİŞKENİ SÖZLEŞMESİ İHLALİ — uygulama açılmıyor"
 
-Una variabile d'ambiente manca o è malformata. Le righe sotto quel messaggio nominano ogni variabile e il motivo del rifiuto (per esempio una chiave principale che non è di 44 caratteri base64) — mai il suo valore. Confronta i tuoi nomi con `.env.example` e con la tabella sotto "Cosa serve".
+Una variabile d'ambiente manca o è malformata (questo messaggio del server è ancora in turco). Le righe sotto il messaggio nominano ogni variabile e il motivo del rifiuto (ad esempio una chiave principale che non è di 44 caratteri base64) — mai il suo valore. Confronta i tuoi nomi con `.env.example` e con la tabella sotto "Cosa serve".
 
 ### `/api/health` risponde `{"ok":true,...}` ma il pannello chiede una password, e gli endpoint delle impostazioni rispondono 401 con `{"ok":false,"reason":"NO_SESSION"}`
 
-È lo stato atteso senza sessione. Scrivi la password del proprietario nel campo **Parola** del pannello e premi **Giriş yap** (vedi "Primo utilizzo"); la stessa pagina apre il pannello, senza ricaricare.
+È lo stato atteso senza sessione. Scrivi la password del proprietario nel campo **Password** del pannello e premi **Sign in** (vedi "Primo utilizzo"); la stessa pagina apre poi il pannello, senza ricaricare.
 
-### Avviare il motore risponde 409 con il motivo **TICK_UNSET**
+### START non compare, oppure il motore dice "did not start: no tick interval is chosen"
 
-L'intervallo di tick è vuoto (nasce vuoto). Scegli prima un intervallo nella sezione del pannello "Tik aralığı", poi invia di nuovo la richiesta di avvio.
+START compare solo quando ogni riga di "Before you start" è ✓. Segui i link "First: …". Se l'intervallo di tick è vuoto (nasce vuoto), scegline uno in **Settings → Tick interval** e riavvia. In una nuova installazione le due quote di rischio nascono vuote e in questa versione non si possono inserire dal pannello, quindi START resta nascosto (vedi "Primo utilizzo", passo 3).
 
 ### La mia chiave Binance viene rifiutata con **P1_WITHDRAWALS**, **P1_UNIVERSAL_TRANSFER** o **KEY_TYPE_NOT_ED25519**
 
-Crea su Binance una nuova chiave API di tipo **Ed25519** con prelievi e trasferimento universale **disattivati**, e aggiungi quella nel pannello. Nel pannello il rifiuto appare come "Anahtar REDDEDİLDİ: …" (chiave rifiutata) e nomina il permesso da disattivare. Una chiave rifiutata non viene salvata né registrata nei log.
+Crea su Binance una nuova chiave API di tipo **Ed25519** con prelievi e trasferimento universale **disattivati**, e aggiungi quella nel pannello. Nel pannello il rifiuto si legge "Key REFUSED: …" e nomina il permesso da disattivare. Una chiave rifiutata non viene salvata né registrata.
+
+### Devo limitare la mia chiave API Binance a un indirizzo IP?
+
+Non con un indirizzo fisso in una normale configurazione Vercel: le funzioni Vercel usano per impostazione predefinita indirizzi IP in uscita dinamici, e gli indirizzi fissi in uscita sono la funzione a pagamento Static IPs di Vercel (100 $ al mese per progetto, documentazione Vercel letta il 2026-09-26). Senza limitazione IP vale la regola di Binance (annuncio Binance del 2021-07-26): il permesso **Enable Spot & Margin Trading** della chiave vale **90 giorni** dall'attivazione e poi viene disattivato automaticamente — riattivalo su Binance, altrimenti il motore non può inviare ordini. Binance ha inoltre comunicato che le chiavi senza limitazione IP inutilizzate per 30 giorni vengono rimosse; il pannello mostra un contatore di 30 giorni in **Settings → Binance API key → Technical details**.
+
+### Ho perso la password, l'autenticatore (TOTP) o una chiave
+
+- **Password o TOTP:** sposta il vecchio `owner-credentials.txt`, esegui di nuovo `npm run owner:credentials`, sostituisci `OWNER_PASSWORD_HASH`, `OWNER_TOTP_SECRET` e `SESSION_SECRET` in Vercel con le tre righe del nuovo `vercel-env-owner.txt` e rifai il deployment. Tutte le sessioni aperte terminano; aggiungi la nuova chiave di configurazione TOTP alla tua app di autenticazione.
+- **Chiave di arresto:** sposta `stop-key.txt`, esegui `npm run stop:credential`, metti il nuovo hash in `STOP_KEY_HASH` e rifai il deployment.
+- **Chiave principale persa** (`ENCRYPTION_MASTER_KEY`): la chiave Binance salvata non può più essere decifrata né recuperata. Elimina quella chiave API su Binance, sposta `encryption-master-key.txt`, esegui `npm run key:encryption-master`, metti il nuovo valore in `ENCRYPTION_MASTER_KEY`, rifai il deployment e aggiungi una nuova chiave Binance nel pannello. Se hai ancora la vecchia chiave principale e vuoi solo cambiarla, usa invece la rotazione (passo di installazione 15).
+- **Chiave privata Binance persa:** elimina quella chiave API su Binance, sposta i vecchi file `.pem`, esegui `npm run key:generate`, crea una nuova chiave API con la nuova chiave pubblica e aggiungila nel pannello.
+
+### Come disinstallo e smetto di pagare?
+
+Prima ferma il motore (**STOP** nella scheda Status, oppure `/durdur`). Poi:
+- elimina la chiave API su Binance (Profile → API Management) — da solo questo chiude ogni accesso al trading;
+- elimina il progetto Vercel (Project → Settings → Delete Project) — questo rimuove l'attività pianificata che gira ogni minuto; se questo progetto era il tuo unico motivo per Vercel Pro, cambia o annulla il piano nelle impostazioni di fatturazione di Vercel;
+- elimina il progetto Neon e il database Upstash nelle loro console;
+- revoca la chiave API di Anthropic.
+
+I file in `winvestour-backup` appartengono solo a questa installazione; eliminali quando non ti servono più.
 
 ### Binance risponde 451 "Service unavailable from a restricted location"
 
-Binance blocca le richieste da località statunitensi. `vercel.json` fissa per questo le funzioni alla regione `hnd1` (Tokyo); se cambi la regione in una statunitense, ogni chiamata a Binance fallisce con 451 e il motore segnala la regione come bloccata.
+Binance blocca le richieste dagli Stati Uniti. Per questo `vercel.json` fissa le funzioni nella regione `hnd1` (Tokyo); se cambi la regione con una statunitense, ogni chiamata a Binance fallisce con 451 e il motore segnala la regione come bloccata.
 
 ### Questo software invia qualcosa al suo manutentore?
 
-No. Chiama solo Binance (con la tua chiave), i tuoi Neon e Upstash, e Anthropic (con la tua chiave). L'unico traffico di terze parti che non controlla è la telemetria di build di Next.js descritta nella sezione sui costi, che puoi disattivare con `NEXT_TELEMETRY_DISABLED=1`.
+No. Chiama solo Binance (con la tua chiave), i tuoi Neon e Upstash e Anthropic (con la tua chiave). L'unico traffico di terze parti che non controlla è la telemetria di build di Next.js descritta nella sezione dei costi, che puoi disattivare con `NEXT_TELEMETRY_DISABLED=1`.
 
 ---
 

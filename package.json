@@ -1,6 +1,6 @@
 {
   "name": "winvestour-bot",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -17,6 +17,7 @@
     "key:encryption-master": "tsx scripts/encryption-master-key.mts",
     "owner:credentials": "tsx scripts/owner-credentials.mts",
     "stop:credential": "tsx scripts/stop-credential.mts",
+    "key:generate": "tsx scripts/key-generate.mts",
     "gate:migration": "node scripts/gate-migration.mjs"
   },
   "dependencies": {
