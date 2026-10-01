@@ -95,14 +95,14 @@ You are helping me install winvestour-bot, a self-hosted crypto trading bot for 
   13. Deploy on Vercel
      Check: the deployment reaches Ready, and `https://<your-project>.vercel.app/api/health` returns `{"ok":true,...}`. On the Hobby plan the deployment fails instead, with a message that cron expressions running more often than once per day are not allowed.
   14. Open the panel at `/panel` on your address, and the stop screen at `/durdur`
-     Check: both pages open (the interface is in English). The panel says it needs a session; the stop screen opens without a session and asks for the stop key. Continue with "First use".
+     Check: both pages open in your browser's language if it is one of this README's seven languages, otherwise in English; you can switch with the language menu at the top of the page. The panel says it needs a session; the stop screen opens without a session and asks for the stop key. Continue with "First use".
   15. OPTIONAL, NOT PART OF SETUP — MASTER KEY ROTATION
      Command: `npm run rotate:encryption-key`
      Check: each row is decrypted with the old key and re-wrapped with the new one in its own transaction, and its version is raised; the new envelope is checked against the new key BEFORE anything is written. Once no row is left on the old version, `ENCRYPTION_MASTER_KEY_PREVIOUS` can be deleted. No key value is ever printed.
 
 5. Checks. After each step, ask me to compare what I see with the Check line of that step. If it does not match, stop, do not improvise a fix, and send me to the README section "FAQ / troubleshooting" and the wiki page FAQ.
 
-6. First use. When the deployment is Ready, guide me through the README section "First use" in this order (the panel and the stop screen are in English; the README gives each screen's and button's name):
+6. First use. When the deployment is Ready, guide me through the README section "First use" in this order (the panel and the stop screen open in my browser's language if it is one of the README's seven languages, otherwise in English, and can be switched with the language menu at the top; the README in my language names each screen and button as the panel shows it):
   1. Sign in (owner password, then a one-time code per sensitive action)
   2. Read the Status tab: engine status and "Before you start"
   3. Fill in the Settings tab
@@ -111,6 +111,8 @@ You are helping me install winvestour-bot, a self-hosted crypto trading bot for 
   6. Stop the engine
   7. History and Technical
   8. What this release does not have
+
+7. Updating. When I later ask to update this installation to a new version, take me through the README section "Updating" one step at a time with exactly its commands, and check each step's result as in rule 5. Rule 3 still applies: the database connection string and every other value stay on my computer and in Vercel, never in this chat.
 ```
 
 <!-- readme:install -->
@@ -204,7 +206,7 @@ Expected result: the deployment reaches **Ready**, and `https://<your-project>.v
 
 14. Open the panel at `/panel` on your address, and the stop screen at `/durdur`.
 
-Expected result: both pages open (the interface is in English). The panel says it needs a session; the stop screen opens without a session and asks for the stop key. Continue with "First use".
+Expected result: both pages open in your browser's language if it is one of this README's seven languages, otherwise in English; you can switch with the language menu at the top of the page. The panel says it needs a session; the stop screen opens without a session and asks for the stop key. Continue with "First use".
 
 15. OPTIONAL, NOT PART OF SETUP — MASTER KEY ROTATION. If your master key leaked or you want to change it: move the old backup file aside, run step 6 again to generate a NEW key, pass the new one as `ENCRYPTION_MASTER_KEY`, the old one as `ENCRYPTION_MASTER_KEY_PREVIOUS`, and raise `ENCRYPTION_KEY_VERSION` by one. It is a DRY RUN by default: nothing is written, only decryptability is measured; add `-- --write` to actually write:
 
@@ -297,6 +299,39 @@ Every number here comes from this software's own measurements on the maintainer'
 | **Upstash Free** | **500,000 commands** per month, 256 MB, 10 GB bandwidth | 43,200 commands (8.6%) ⇒ **FITS** | ≈ 302,000 commands (1 open position) ⇒ **FITS**; 4 or more positions do not fit |
 | **Anthropic** | no free tier | 0 calls ⇒ $0 | the Anthropic line above |
 </details>
+
+<!-- readme:update -->
+## Updating
+
+Every one of the 4 steps below is exercised before each release on a copy installed from version 1.0.0 with data in its database — by the automated update check. A step that is not exercised this way is not written here.
+
+1. Get the new version into the folder you installed from. If you cloned this repository with git, run this in that folder; if you downloaded the ZIP, download the new ZIP instead, extract it into a new folder, copy your `.env` file (if you made one) into it and continue there. Your values are not in the code: git ignores the `.env` file, the backup folder is outside the repository, and the values you entered in Vercel stay in Vercel:
+
+```sh
+git pull
+```
+
+Expected result: the command ends without a conflict and lists the changed files; the `version` field in `package.json` is the new release's number; your `.env` file is still there.
+
+2. Install the dependencies of the new version:
+
+```sh
+npm ci
+```
+
+Expected result: the command ends without an error.
+
+3. Apply the new version's database changes, from your computer with `DIRECT_URL` set as in installation step 10. Only the changes your database does not have yet are applied, in order; the tables are not re-created and existing rows are kept:
+
+```sh
+npx prisma migrate deploy
+```
+
+Expected result: the output ends with `All migrations have been successfully applied.` if the new version brings database changes, or says `No pending migrations to apply.` if it brings none. Your risk shares, settings and history are unchanged; updating does not start the engine and switches nothing on. If the command fails, see the wiki page Troubleshooting.
+
+4. Deploy the new version: push the updated folder to your own GitHub repository the same way as in installation step 13; Vercel builds it automatically. Its `vercel-build` script first refuses any migration that would delete data, then runs the same migration command again (harmless: nothing is pending) and builds. The environment variables you entered in Vercel stay as they are.
+
+Expected result: the deployment reaches **Ready** and `https://<your-project>.vercel.app/api/health` returns `{"ok":true,...}`. The panel shows the same engine state as before the update: a stopped engine stays stopped. If the new version needs a variable your deployment does not have, the server does not start and the error names the missing variable.
 
 <!-- readme:faq -->
 ## FAQ / troubleshooting

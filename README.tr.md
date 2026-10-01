@@ -97,14 +97,14 @@ You are helping me install winvestour-bot, a self-hosted crypto trading bot for 
   13. Deploy on Vercel
      Check: the deployment reaches Ready, and `https://<your-project>.vercel.app/api/health` returns `{"ok":true,...}`. On the Hobby plan the deployment fails instead, with a message that cron expressions running more often than once per day are not allowed.
   14. Open the panel at `/panel` on your address, and the stop screen at `/durdur`
-     Check: both pages open (the interface is in English). The panel says it needs a session; the stop screen opens without a session and asks for the stop key. Continue with "First use".
+     Check: both pages open in your browser's language if it is one of this README's seven languages, otherwise in English; you can switch with the language menu at the top of the page. The panel says it needs a session; the stop screen opens without a session and asks for the stop key. Continue with "First use".
   15. OPTIONAL, NOT PART OF SETUP — MASTER KEY ROTATION
      Command: `npm run rotate:encryption-key`
      Check: each row is decrypted with the old key and re-wrapped with the new one in its own transaction, and its version is raised; the new envelope is checked against the new key BEFORE anything is written. Once no row is left on the old version, `ENCRYPTION_MASTER_KEY_PREVIOUS` can be deleted. No key value is ever printed.
 
 5. Checks. After each step, ask me to compare what I see with the Check line of that step. If it does not match, stop, do not improvise a fix, and send me to the README section "FAQ / troubleshooting" and the wiki page FAQ.
 
-6. First use. When the deployment is Ready, guide me through the README section "First use" in this order (the panel and the stop screen are in English; the README gives each screen's and button's name):
+6. First use. When the deployment is Ready, guide me through the README section "First use" in this order (the panel and the stop screen open in my browser's language if it is one of the README's seven languages, otherwise in English, and can be switched with the language menu at the top; the README in my language names each screen and button as the panel shows it):
   1. Sign in (owner password, then a one-time code per sensitive action)
   2. Read the Status tab: engine status and "Before you start"
   3. Fill in the Settings tab
@@ -113,6 +113,8 @@ You are helping me install winvestour-bot, a self-hosted crypto trading bot for 
   6. Stop the engine
   7. History and Technical
   8. What this release does not have
+
+7. Updating. When I later ask to update this installation to a new version, take me through the README section "Updating" one step at a time with exactly its commands, and check each step's result as in rule 5. Rule 3 still applies: the database connection string and every other value stay on my computer and in Vercel, never in this chat.
 ```
 
 <!-- readme:install -->
@@ -206,7 +208,7 @@ Beklenen sonuç: dağıtım **Ready** olur ve `https://<projen>.vercel.app/api/h
 
 14. Adresinde paneli `/panel` yolundan, durdurma ekranını `/durdur` yolundan aç.
 
-Beklenen sonuç: iki sayfa da açılır (arayüz İngilizcedir). Panel oturum istediğini söyler; durdurma ekranı oturumsuz açılır ve durdurma anahtarını ister. "İlk kullanım" ile devam et.
+Beklenen sonuç: iki sayfa da, tarayıcının dili bu README'nin yedi dilinden biriyse o dilde, değilse İngilizce açılır; dili sayfanın üstündeki dil menüsünden değiştirebilirsin. Panel oturum istediğini söyler; durdurma ekranı oturumsuz açılır ve durdurma anahtarını ister. "İlk kullanım" ile devam et.
 
 15. İSTEĞE BAĞLI, KURULUMUN PARÇASI DEĞİL — ANA ANAHTAR DÖNÜŞÜ. Ana anahtarın sızdıysa ya da değiştirmek istiyorsan: eski yedek dosyasını taşı, 6. adımı yeniden koşarak YENİ bir anahtar üret, `ENCRYPTION_MASTER_KEY` olarak yeniyi, `ENCRYPTION_MASTER_KEY_PREVIOUS` olarak eskiyi ver ve `ENCRYPTION_KEY_VERSION`'ı bir artır. Varsayılan KURU koşumdur: hiçbir şey yazılmaz, yalnız çözülebilirlik ölçülür; yazmak için sonuna `-- --write` ekle:
 
@@ -299,6 +301,39 @@ Buradaki her sayı bu yazılımın yazarının kendi dağıtımındaki ölçüm�
 | **Upstash Free** | ayda **500 000 komut**, 256 MB, 10 GB bant | 43 200 komut (%8,6) ⇒ **SIĞAR** | ≈ 302 000 komut (1 açık pozisyon) ⇒ **SIĞAR**; 4 ve üzeri pozisyonda sığmaz |
 | **Anthropic** | ücretsiz katman yok | çağrı 0 ⇒ 0 $ | yukarıdaki Anthropic satırı |
 </details>
+
+<!-- readme:update -->
+## Güncelleme
+
+Aşağıdaki 4 adımın her biri her yayından önce, 1.0.0 sürümünden kurulmuş ve veritabanında veri olan bir kopyada otomatik güncelleme denemesiyle sırayla denenir. Bu şekilde denenmeyen adım buraya yazılmaz.
+
+1. Yeni sürümü kurduğun klasöre al. Depoyu git ile klonladıysan o klasörde bunu çalıştır; ZIP indirdiysen yeni ZIP'i indir, yeni bir klasöre aç, (oluşturduysan) `.env` dosyanı içine kopyala ve orada devam et. Değerlerin kodda değil: git `.env` dosyasını yok sayar, yedek klasörü deponun dışındadır, Vercel'e girdiğin değerler Vercel'de kalır:
+
+```sh
+git pull
+```
+
+Beklenen sonuç: komut çakışmasız biter ve değişen dosyaları listeler; `package.json` içindeki `version` alanı yeni sürümün numarasıdır; `.env` dosyan yerinde durur.
+
+2. Yeni sürümün bağımlılıklarını kur:
+
+```sh
+npm ci
+```
+
+Beklenen sonuç: komut hatasız biter.
+
+3. Yeni sürümün veritabanı değişikliklerini, kurulumun 10. adımındaki gibi `DIRECT_URL` ayarlıyken bilgisayarından uygula. Yalnız veritabanında henüz olmayan değişiklikler sırayla uygulanır; tablolar yeniden kurulmaz, var olan satırlar korunur:
+
+```sh
+npx prisma migrate deploy
+```
+
+Beklenen sonuç: yeni sürüm veritabanı değişikliği getiriyorsa çıktı `All migrations have been successfully applied.` satırıyla biter, getirmiyorsa `No pending migrations to apply.` der. Risk payların, ayarların ve geçmişin değişmez; güncelleme motoru başlatmaz ve hiçbir şeyi açmaz. Komut hata verirse wiki'deki Troubleshooting sayfasına bak.
+
+4. Yeni sürümü dağıt: güncellenen klasörü kurulumun 13. adımındaki gibi kendi GitHub depona gönder; Vercel onu kendiliğinden derler. `vercel-build` betiği önce veri silecek her değişikliği reddeder, sonra aynı veritabanı komutunu yeniden çalıştırır (zararsız: bekleyen yok) ve derler. Vercel'e girdiğin ortam değişkenleri olduğu gibi kalır.
+
+Beklenen sonuç: dağıtım **Ready** olur ve `https://<projen>.vercel.app/api/health` `{"ok":true,...}` döner. Panel güncellemeden önceki motor durumunu gösterir: duran motor durmaya devam eder. Yeni sürüm dağıtımında olmayan bir değişken isterse sunucu açılmaz ve hata eksik adı söyler.
 
 <!-- readme:faq -->
 ## SSS / sorun giderme

@@ -7,7 +7,8 @@
 // KIRMIZI ayrıca: `vercel-build` yoksa, sırası kapı → `prisma migrate deploy` → `next build` değilse ya da zincir `&&` dışında bir işleç taşıyorsa (`;` `||` `|` `&` — göç başarısızken derleme SESSİZCE sürer).
 // ONAY YOLU YOK: onaylanmış veri silen göçün nasıl geçeceği belgede yazılı değil (ANAYASA E-1 notu) ⇒ kapı onu da KIRMIZI sayar, iş sahibine sorulur.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const asJson = process.argv.includes("--json");
 const findings = []; let checked = 0;
@@ -16,7 +17,7 @@ const bad = (rule, where, detail) => findings.push({ rule, where, detail });
 const expect = (rule, where, cond, detail) => { checked++; if (!cond) bad(rule, where, detail); };
 
 /** Yorum, dize ve "tanımlayıcı" içeriğini aynı uzunlukta boşlukla değiştirir (satır sonları korunur ⇒ satır numarası doğru kalır). */
-function blankNonCode(sql) {
+export function blankNonCode(sql) {
   let o = "", i = 0; const keep = (s) => s.replace(/[^\n]/g, " ");
   while (i < sql.length) {
     const c = sql[i], two = sql.slice(i, i + 2);
@@ -31,14 +32,15 @@ function blankNonCode(sql) {
 }
 const NOT_COLUMN = "(?:CONSTRAINT|DEFAULT|NOT\\s+NULL|EXPRESSION|IDENTITY)\\b";
 /** Veri silen ifade kuralları. Girdi: blankNonCode'dan geçmiş TEK ifade. */
-const DATA_LOSS = [
+export const DATA_LOSS = [
   { rule: "drop-table", re: /\bDROP\s+TABLE\b/i },
   { rule: "drop-column", re: new RegExp(`\\bALTER\\s+TABLE\\b[\\s\\S]*\\bDROP\\s+(?!${NOT_COLUMN})(?:COLUMN\\b|(?:IF\\s+EXISTS\\s+)?(?:"|[A-Za-z_]))`, "i") },
   { rule: "delete-from", re: /\bDELETE\s+FROM\b/i },
   { rule: "truncate", re: /\bTRUNCATE\b/i },
 ];
 /** Bir göç metninin ihlalleri: [{ rule, line, text }]. `statements` = taranan ifade sayısı. */
-function scanSql(sql) {
+// Tur 81 (G35): yayın kapısının artımlı göç kuralı (gate-publish.mjs (J)) AYNI alfabeyi bu dosyadan içe aktarır — kopyası yok. Ana blok yalnız doğrudan koşulunca çalışır (vercel-build zinciri aynı).
+export function scanSql(sql) {
   const code = blankNonCode(sql), hits = []; let statements = 0, start = 0;
   for (const part of code.split(";")) {
     const at = start; start += part.length + 1;
@@ -52,7 +54,8 @@ function scanSql(sql) {
   return { statements, hits };
 }
 
-{
+const isMain = !!process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
   // ---- EVREN: prisma.config.ts'in göç yolu (migrate deploy'un uyguladığı yer) ----
   const cfg = existsSync("prisma.config.ts") ? readFileSync("prisma.config.ts", "utf8") : "";
   const dir = /migrations:\s*\{\s*path:\s*"([^"]+)"/.exec(cfg)?.[1] ?? null;

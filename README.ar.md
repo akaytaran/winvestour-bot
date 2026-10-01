@@ -101,14 +101,14 @@ You are helping me install winvestour-bot, a self-hosted crypto trading bot for 
   13. Deploy on Vercel
      Check: the deployment reaches Ready, and `https://<your-project>.vercel.app/api/health` returns `{"ok":true,...}`. On the Hobby plan the deployment fails instead, with a message that cron expressions running more often than once per day are not allowed.
   14. Open the panel at `/panel` on your address, and the stop screen at `/durdur`
-     Check: both pages open (the interface is in English). The panel says it needs a session; the stop screen opens without a session and asks for the stop key. Continue with "First use".
+     Check: both pages open in your browser's language if it is one of this README's seven languages, otherwise in English; you can switch with the language menu at the top of the page. The panel says it needs a session; the stop screen opens without a session and asks for the stop key. Continue with "First use".
   15. OPTIONAL, NOT PART OF SETUP — MASTER KEY ROTATION
      Command: `npm run rotate:encryption-key`
      Check: each row is decrypted with the old key and re-wrapped with the new one in its own transaction, and its version is raised; the new envelope is checked against the new key BEFORE anything is written. Once no row is left on the old version, `ENCRYPTION_MASTER_KEY_PREVIOUS` can be deleted. No key value is ever printed.
 
 5. Checks. After each step, ask me to compare what I see with the Check line of that step. If it does not match, stop, do not improvise a fix, and send me to the README section "FAQ / troubleshooting" and the wiki page FAQ.
 
-6. First use. When the deployment is Ready, guide me through the README section "First use" in this order (the panel and the stop screen are in English; the README gives each screen's and button's name):
+6. First use. When the deployment is Ready, guide me through the README section "First use" in this order (the panel and the stop screen open in my browser's language if it is one of the README's seven languages, otherwise in English, and can be switched with the language menu at the top; the README in my language names each screen and button as the panel shows it):
   1. Sign in (owner password, then a one-time code per sensitive action)
   2. Read the Status tab: engine status and "Before you start"
   3. Fill in the Settings tab
@@ -117,6 +117,8 @@ You are helping me install winvestour-bot, a self-hosted crypto trading bot for 
   6. Stop the engine
   7. History and Technical
   8. What this release does not have
+
+7. Updating. When I later ask to update this installation to a new version, take me through the README section "Updating" one step at a time with exactly its commands, and check each step's result as in rule 5. Rule 3 still applies: the database connection string and every other value stay on my computer and in Vercel, never in this chat.
 ```
 
 </div>
@@ -244,7 +246,7 @@ npm start
 
 14. افتح اللوحة عبر `/panel` على عنوانك، وشاشة الإيقاف عبر `/durdur`.
 
-النتيجة المتوقعة: تُفتح الصفحتان (الواجهة باللغة الإنجليزية). تقول اللوحة إنها تحتاج جلسة؛ وتُفتح شاشة الإيقاف دون جلسة وتطلب مفتاح الإيقاف. تابع مع "الاستخدام الأول".
+النتيجة المتوقعة: تُفتح الصفحتان بلغة متصفحك إذا كانت إحدى لغات هذا الملف السبع، وإلا فبالإنجليزية؛ ويمكنك التبديل من قائمة اللغة أعلى الصفحة. تقول اللوحة إنها تحتاج جلسة؛ وتُفتح شاشة الإيقاف دون جلسة وتطلب مفتاح الإيقاف. تابع مع "الاستخدام الأول".
 
 15. اختياري، ليس جزءاً من الإعداد — تدوير المفتاح الرئيسي. إذا تسرّب مفتاحك الرئيسي أو أردت تغييره: أزح ملف النسخة الاحتياطية القديم جانباً، وشغّل الخطوة 6 مجدداً لإنشاء مفتاح جديد، ومرّر الجديد كـ `ENCRYPTION_MASTER_KEY` والقديم كـ `ENCRYPTION_MASTER_KEY_PREVIOUS`، وزد `ENCRYPTION_KEY_VERSION` بمقدار واحد. الوضع الافتراضي تشغيل تجريبي: لا يُكتب شيء، وتُقاس فقط إمكانية فك التشفير؛ أضف `-- --write` للكتابة فعلاً:
 
@@ -341,6 +343,51 @@ npm run rotate:encryption-key
 | **Upstash Free** | **500 000 أمر** شهرياً، 256 MB، 10 GB نطاق | 43 200 أمر (8,6 %) ⇒ **يتسع** | ≈ 302 000 أمر (مركز مفتوح واحد) ⇒ **يتسع**؛ 4 مراكز أو أكثر لا تتسع |
 | **Anthropic** | لا خطة مجانية | 0 استدعاء ⇒ 0 $ | بند Anthropic أعلاه |
 </details>
+
+<!-- readme:update -->
+## التحديث
+
+كل خطوة من الخطوات الـ4 أدناه تُنفَّذ قبل كل إصدار على نسخة مثبّتة من الإصدار 1.0.0 وفي قاعدة بياناتها بيانات — عبر فحص التحديث الآلي. الخطوة التي لا تُنفَّذ بهذه الطريقة لا تُكتب هنا.
+
+1. احصل على الإصدار الجديد في المجلد الذي ثبّتّ منه. إذا كنت قد استنسخت هذا المستودع باستخدام git فشغّل هذا الأمر في ذلك المجلد؛ وإذا كنت قد نزّلت ملف ZIP فنزّل ملف ZIP الجديد بدلاً من ذلك، وفك ضغطه في مجلد جديد، وانسخ إليه ملف `.env` الخاص بك (إن كنت قد أنشأته)، وتابع هناك. قيمك ليست في الكود: يتجاهل git ملف `.env`، ومجلد النسخ الاحتياطية خارج المستودع، والقيم التي أدخلتها في Vercel تبقى في Vercel:
+
+<div dir="ltr">
+
+```sh
+git pull
+```
+
+</div>
+
+النتيجة المتوقعة: ينتهي الأمر دون تعارض ويعرض الملفات التي تغيّرت؛ وحقل `version` في `package.json` هو رقم الإصدار الجديد؛ وملف `.env` الخاص بك ما زال موجوداً.
+
+2. ثبّت اعتماديات الإصدار الجديد:
+
+<div dir="ltr">
+
+```sh
+npm ci
+```
+
+</div>
+
+النتيجة المتوقعة: ينتهي الأمر دون خطأ.
+
+3. طبّق تغييرات قاعدة البيانات في الإصدار الجديد من جهازك مع ضبط `DIRECT_URL` كما في خطوة التثبيت 10. تُطبَّق بالترتيب التغييرات التي لا تملكها قاعدة بياناتك بعد فقط؛ لا تُعاد إنشاء الجداول وتبقى الصفوف الموجودة:
+
+<div dir="ltr">
+
+```sh
+npx prisma migrate deploy
+```
+
+</div>
+
+النتيجة المتوقعة: ينتهي الإخراج بالسطر `All migrations have been successfully applied.` إذا جاء الإصدار الجديد بتغييرات في قاعدة البيانات، أو يقول `No pending migrations to apply.` إذا لم يأتِ بأي تغيير. تبقى حصص المخاطرة والإعدادات والسجل كما هي؛ والتحديث لا يشغّل المحرك ولا يفعّل أي شيء. إذا فشل الأمر فانظر صفحة Troubleshooting في الويكي.
+
+4. انشر الإصدار الجديد: ادفع المجلد المحدَّث إلى مستودع GitHub الخاص بك بالطريقة نفسها كما في خطوة التثبيت 13؛ ويبنيه Vercel تلقائياً. يرفض السكربت `vercel-build` أولاً أي ترحيلة قد تحذف بيانات، ثم يشغّل أمر الترحيل نفسه مرة أخرى (غير ضار: لا شيء معلّق) ويبني. تبقى متغيرات البيئة التي أدخلتها في Vercel كما هي.
+
+النتيجة المتوقعة: يصل النشر إلى **Ready**، ويعيد `https://<مشروعك>.vercel.app/api/health` القيمة `{"ok":true,...}`. تعرض اللوحة حالة المحرك نفسها التي كانت قبل التحديث: المحرك المتوقف يبقى متوقفاً. إذا احتاج الإصدار الجديد متغيراً غير موجود في نشرك فلا يعمل الخادم ويذكر الخطأ المتغير الناقص.
 
 <!-- readme:faq -->
 ## الأسئلة الشائعة / حل المشكلات

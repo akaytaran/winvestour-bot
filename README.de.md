@@ -97,14 +97,14 @@ You are helping me install winvestour-bot, a self-hosted crypto trading bot for 
   13. Deploy on Vercel
      Check: the deployment reaches Ready, and `https://<your-project>.vercel.app/api/health` returns `{"ok":true,...}`. On the Hobby plan the deployment fails instead, with a message that cron expressions running more often than once per day are not allowed.
   14. Open the panel at `/panel` on your address, and the stop screen at `/durdur`
-     Check: both pages open (the interface is in English). The panel says it needs a session; the stop screen opens without a session and asks for the stop key. Continue with "First use".
+     Check: both pages open in your browser's language if it is one of this README's seven languages, otherwise in English; you can switch with the language menu at the top of the page. The panel says it needs a session; the stop screen opens without a session and asks for the stop key. Continue with "First use".
   15. OPTIONAL, NOT PART OF SETUP — MASTER KEY ROTATION
      Command: `npm run rotate:encryption-key`
      Check: each row is decrypted with the old key and re-wrapped with the new one in its own transaction, and its version is raised; the new envelope is checked against the new key BEFORE anything is written. Once no row is left on the old version, `ENCRYPTION_MASTER_KEY_PREVIOUS` can be deleted. No key value is ever printed.
 
 5. Checks. After each step, ask me to compare what I see with the Check line of that step. If it does not match, stop, do not improvise a fix, and send me to the README section "FAQ / troubleshooting" and the wiki page FAQ.
 
-6. First use. When the deployment is Ready, guide me through the README section "First use" in this order (the panel and the stop screen are in English; the README gives each screen's and button's name):
+6. First use. When the deployment is Ready, guide me through the README section "First use" in this order (the panel and the stop screen open in my browser's language if it is one of the README's seven languages, otherwise in English, and can be switched with the language menu at the top; the README in my language names each screen and button as the panel shows it):
   1. Sign in (owner password, then a one-time code per sensitive action)
   2. Read the Status tab: engine status and "Before you start"
   3. Fill in the Settings tab
@@ -113,6 +113,8 @@ You are helping me install winvestour-bot, a self-hosted crypto trading bot for 
   6. Stop the engine
   7. History and Technical
   8. What this release does not have
+
+7. Updating. When I later ask to update this installation to a new version, take me through the README section "Updating" one step at a time with exactly its commands, and check each step's result as in rule 5. Rule 3 still applies: the database connection string and every other value stay on my computer and in Vercel, never in this chat.
 ```
 
 <!-- readme:install -->
@@ -206,7 +208,7 @@ Erwartetes Ergebnis: das Deployment erreicht **Ready**, und `https://<dein-proje
 
 14. Öffne das Panel unter `/panel` auf deiner Adresse und den Stopp-Bildschirm unter `/durdur`.
 
-Erwartetes Ergebnis: beide Seiten öffnen sich (die Oberfläche ist auf Englisch). Das Panel sagt, es brauche eine Sitzung; der Stopp-Bildschirm öffnet sich ohne Sitzung und fragt nach dem Stopp-Schlüssel. Weiter mit "Erste Nutzung".
+Erwartetes Ergebnis: beide Seiten öffnen sich in der Sprache deines Browsers, wenn sie eine der sieben Sprachen dieses README ist, sonst auf Englisch; über das Sprachmenü oben auf der Seite kannst du wechseln. Das Panel sagt, es brauche eine Sitzung; der Stopp-Bildschirm öffnet sich ohne Sitzung und fragt nach dem Stopp-Schlüssel. Weiter mit "Erste Nutzung".
 
 15. OPTIONAL, NICHT TEIL DER EINRICHTUNG — ROTATION DES HAUPTSCHLÜSSELS. Wenn dein Hauptschlüssel geleakt ist oder du ihn ändern willst: lege die alte Sicherungsdatei beiseite, führe Schritt 6 erneut aus, um einen NEUEN Schlüssel zu erzeugen, übergib den neuen als `ENCRYPTION_MASTER_KEY`, den alten als `ENCRYPTION_MASTER_KEY_PREVIOUS`, und erhöhe `ENCRYPTION_KEY_VERSION` um eins. Standardmäßig ist es ein TROCKENLAUF: nichts wird geschrieben, nur die Entschlüsselbarkeit wird gemessen; füge `-- --write` an, um wirklich zu schreiben:
 
@@ -299,6 +301,39 @@ Jede Zahl hier stammt aus den eigenen Messungen dieser Software auf dem Deployme
 | **Upstash Free** | **500 000 Befehle** pro Monat, 256 MB, 10 GB Bandbreite | 43 200 Befehle (8,6 %) ⇒ **PASST** | ≈ 302 000 Befehle (1 offene Position) ⇒ **PASST**; 4 oder mehr Positionen passen nicht |
 | **Anthropic** | keine kostenlose Stufe | 0 Aufrufe ⇒ 0 $ | der Anthropic-Posten oben |
 </details>
+
+<!-- readme:update -->
+## Aktualisieren
+
+Jeder der 4 Schritte unten wird vor jeder Veröffentlichung an einer Kopie durchlaufen, die aus Version 1.0.0 installiert wurde und Daten in ihrer Datenbank hat — durch die automatische Update-Prüfung. Ein Schritt, der so nicht durchlaufen wird, steht hier nicht.
+
+1. Hole die neue Version in den Ordner, aus dem du installiert hast. Wenn du dieses Repository mit git geklont hast, führe dies in diesem Ordner aus; wenn du das ZIP heruntergeladen hast, lade stattdessen das neue ZIP herunter, entpacke es in einen neuen Ordner, kopiere deine Datei `.env` (falls du eine angelegt hast) hinein und mache dort weiter. Deine Werte stehen nicht im Code: git ignoriert die Datei `.env`, der Sicherungsordner liegt außerhalb des Repositorys, und die Werte, die du in Vercel eingetragen hast, bleiben in Vercel:
+
+```sh
+git pull
+```
+
+Erwartetes Ergebnis: der Befehl endet ohne Konflikt und listet die geänderten Dateien auf; das Feld `version` in `package.json` ist die Nummer der neuen Version; deine Datei `.env` ist noch da.
+
+2. Installiere die Abhängigkeiten der neuen Version:
+
+```sh
+npm ci
+```
+
+Erwartetes Ergebnis: der Befehl endet ohne Fehler.
+
+3. Wende die Datenbankänderungen der neuen Version an, von deinem Rechner aus mit gesetztem `DIRECT_URL` wie in Installationsschritt 10. Es werden nur die Änderungen angewendet, die deine Datenbank noch nicht hat, der Reihe nach; die Tabellen werden nicht neu angelegt, und vorhandene Zeilen bleiben erhalten:
+
+```sh
+npx prisma migrate deploy
+```
+
+Erwartetes Ergebnis: die Ausgabe endet mit `All migrations have been successfully applied.`, wenn die neue Version Datenbankänderungen mitbringt, oder meldet `No pending migrations to apply.`, wenn sie keine mitbringt. Deine Risikoanteile, Einstellungen und dein Verlauf bleiben unverändert; ein Update startet die Engine nicht und schaltet nichts ein. Schlägt der Befehl fehl, siehe die Wiki-Seite Troubleshooting.
+
+4. Deploye die neue Version: pushe den aktualisierten Ordner in dein eigenes GitHub-Repository, genauso wie in Installationsschritt 13; Vercel baut ihn automatisch. Sein Skript `vercel-build` lehnt zuerst jede Migration ab, die Daten löschen würde, führt dann denselben Migrationsbefehl erneut aus (unschädlich: nichts steht aus) und baut. Die Umgebungsvariablen, die du in Vercel eingetragen hast, bleiben, wie sie sind.
+
+Erwartetes Ergebnis: das Deployment erreicht **Ready**, und `https://<dein-projekt>.vercel.app/api/health` liefert `{"ok":true,...}`. Das Panel zeigt denselben Engine-Zustand wie vor dem Update: eine gestoppte Engine bleibt gestoppt. Braucht die neue Version eine Variable, die dein Deployment nicht hat, startet der Server nicht, und der Fehler nennt die fehlende Variable.
 
 <!-- readme:faq -->
 ## FAQ / Fehlerbehebung
