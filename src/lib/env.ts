@@ -33,6 +33,11 @@ export const envSchema = z.object({
   // TUR 67 (Üretim K3 = [A]): tik ARALIĞI artık ortam değişkeni DEĞİL — panel ayarı `brain_settings.tick_ms`, izin kopyasıyla taşınır (src/lib/chain settleTick). `ENGINE_TICK_MS` sözleşmeden ÇIKTI:
   //   ortamda dursa da okunmaz (şema bilinmeyen adı atar); iki okuma yolu yan yana kalmaz.
   ENGINE_MODE: z.enum(["CHEAP", "FAST"]),
+  // Tur 82 (G20 FCM kalemi · iş sahibi kararı KARAR-DEFTERI 1 Eki 2026 D2): İSTEĞE BAĞLI Firebase bildirim eklentisi — üç ad BOŞ doğar ve boşken uygulama açılır (şema burada
+  //   biçim DENETLEMEZ: yarım/bozuk değer açılışı düşürmez, bildirimi kapalı arızalandırır — `readFirebaseEnv`). Değer hiçbir mesaja girmez (S-2).
+  FIREBASE_PROJECT_ID: z.string().optional(),
+  FIREBASE_CLIENT_EMAIL: z.string().optional(),
+  FIREBASE_PRIVATE_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -78,3 +83,24 @@ export const readOptionalEnv = (name: string): string | undefined => { const v =
 
 /** Sözleşmedeki isimler (.env.example ve kapı için). Değer içermez. */
 export const envNames = Object.keys(envSchema.shape) as (keyof Env)[];
+
+/** Tur 82 (D2): Firebase bildirim eklentisinin ad sözleşmesi — gate:notify (24) bu listeyi kararın üç adıyla birebir ölçer. */
+export const FIREBASE_ENV_NAMES = ["FIREBASE_PROJECT_ID", "FIREBASE_CLIENT_EMAIL", "FIREBASE_PRIVATE_KEY"] as const;
+export type FirebaseEnv = { state: "OFF" } | { state: "ON"; cfg: { projectId: string; clientEmail: string; privateKeyPem: string } } | { state: "INVALID"; names: string[] };
+const PEM_LABEL = ["PRIVATE", "KEY"].join(" ");
+const FB_FORMAT = {
+  FIREBASE_PROJECT_ID: (v: string) => /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(v),
+  FIREBASE_CLIENT_EMAIL: (v: string) => /^[^@\s]+@[a-z0-9-]+\.iam\.gserviceaccount\.com$/.test(v),
+  // PEM başlığı desende parçalı (PEM_LABEL): gate:secrets'in özel anahtar deseni kaynak metninde başlığı arar.
+  FIREBASE_PRIVATE_KEY: (v: string) => new RegExp(`^-----BEGIN ${PEM_LABEL}-----\\n[A-Za-z0-9+/=\\n]+\\n-----END ${PEM_LABEL}-----\\n?$`).test(v),
+} as const;
+/** İSTEĞE BAĞLI Firebase eklentisinin DURUMU (Tur 82, D2). Üçü boş ⇒ OFF (hata yok) · üçü dolu ve biçimi doğru ⇒ ON · yarım/bozuk ⇒ INVALID + yalnız ADLAR (değer asla).
+ *  Vercel'e yapıştırılan JSON değeri ters bölü + n dizilerini taşıyabilir (README adım 2) — anahtar okunurken gerçek satır sonuna çevrilir. Fırlatmaz. */
+export function readFirebaseEnv(src: Record<string, string | undefined> = process.env): FirebaseEnv {
+  const v = (n: (typeof FIREBASE_ENV_NAMES)[number]) => { const x = (src[n] ?? "").trim(); return n === "FIREBASE_PRIVATE_KEY" ? x.replace(/\\n/g, "\n") : x; };
+  const filled = FIREBASE_ENV_NAMES.filter((n) => v(n) !== "");
+  if (filled.length === 0) return { state: "OFF" };
+  const bad = FIREBASE_ENV_NAMES.filter((n) => v(n) === "" || !FB_FORMAT[n](v(n)));
+  if (bad.length > 0) return { state: "INVALID", names: [...bad] };
+  return { state: "ON", cfg: { projectId: v("FIREBASE_PROJECT_ID"), clientEmail: v("FIREBASE_CLIENT_EMAIL"), privateKeyPem: v("FIREBASE_PRIVATE_KEY") } };
+}

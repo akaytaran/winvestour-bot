@@ -8,7 +8,7 @@ type PanelTextSrc = { title: string; what: string; money: string; next: string }
 
 export const DE_SRV = {
   lang: "de",
-  units: { second: "{n} s", minute: "{n} Min.", hour: "{n} Std." },
+  units: { second: "{n} s", minute: "{n} min", hour: "{n} h" },
   common: {
     unknown: "{what} UNBEKANNT — {why}. Es wurde NICHT angenommen, dass kein Problem besteht; hier wird keine Zahl geschrieben, bis dieser Wert gelesen ist.",
     readFailed: "{what} konnte nicht gelesen werden ({name})",

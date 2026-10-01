@@ -34,7 +34,7 @@
 - **مفتاح API من Binance من نوع Ed25519، مُنشأ دون صلاحية السحب.** يُرفض المفتاح الذي يُفعِّل السحب أو التحويل الشامل ولا يُخزَّن أبداً.
 - **Node.js وnpm** على جهازك لأوامر الإعداد، ونحو **ساعة واحدة** إجمالاً.
 
-لا تحمل هذه النسخة شيئاً من المشرف: لا يقرأ الكود أي اسم نطاق، لا يوجد اسم حزمة أندرويد ولا بصمة توقيع في عقد البيئة، ولا يوجد إعداد أو متغير Firebase/FCM. كل ما يلي يولد فارغاً، وتملؤه أنت بقيمك الخاصة.
+لا تحمل هذه النسخة شيئاً من المشرف: لا يقرأ الكود أي اسم نطاق، لا يوجد اسم حزمة أندرويد ولا بصمة توقيع في عقد البيئة، وتولد متغيرات Firebase الثلاثة لإضافة إشعارات الدفع الاختيارية فارغة، لذلك تكون الإشعارات متوقفة. كل ما يلي يولد فارغاً، وتملؤه أنت بقيمك الخاصة.
 
 | متغير البيئة | من أين تأتي القيمة |
 |---|---|
@@ -87,8 +87,8 @@ You are helping me install winvestour-bot, a self-hosted crypto trading bot for 
      Check: binance-private-key.pem, binance-public-key.pem appear in the folder. On Binance choose Profile → API Management → Create API → Self-generated and paste the contents of the second file (the public key); you paste the first file (the private key) into the panel later ("First use").
   8. Create an empty PostgreSQL database
      Check: two strings that start with `postgresql://`; the database has no tables yet.
-  9. Give every name in `.env.example` its value — except `ENCRYPTION_MASTER_KEY_PREVIOUS`, which stays empty (it is used only during a master-key rotation)
-     Check: every name in `.env.example` except `ENCRYPTION_MASTER_KEY_PREVIOUS` has a value. If a required name is missing, the application stops at startup and names the missing variable.
+  9. Give every name in `.env.example` its value — except `ENCRYPTION_MASTER_KEY_PREVIOUS`, which stays empty (it is used only during a master-key rotation), and the three optional `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, which also stay empty unless you add your own Firebase for push notifications (see that section below)
+     Check: every name in `.env.example` except `ENCRYPTION_MASTER_KEY_PREVIOUS` and the three optional `FIREBASE_*` names has a value. If a required name is missing, the application stops at startup and names the missing variable.
   10. Create the database tables
      Command: `npx prisma migrate deploy`
      Check: the output ends with `All migrations have been successfully applied.` A single migration named `0_baslangic` is applied; every settings table starts with one row; the risk settings are empty and switched off.
@@ -200,9 +200,9 @@ npm run key:generate
 
 النتيجة المتوقعة: سلسلتان تبدآن بـ `postgresql://`؛ لا توجد جداول في قاعدة البيانات بعد.
 
-9. أعطِ كل اسم في `.env.example` قيمته — باستثناء `ENCRYPTION_MASTER_KEY_PREVIOUS` الذي يبقى فارغاً (يُستخدم فقط أثناء تدوير المفتاح الرئيسي). مصدر كل قيمة موجود في الجدول تحت "ما تحتاجه"؛ وتأتي `OWNER_PASSWORD_HASH`, `OWNER_TOTP_SECRET`, `SESSION_SECRET`, `STOP_KEY_HASH`, `ENCRYPTION_MASTER_KEY` من ملفات الخطوات 4–6. للنشر أدخلها في Vercel تحت **Settings → Environment Variables**؛ وللتشغيل المحلي ضع الأسماء نفسها في ملف `.env` بجانب `package.json` (يتجاهل git هذا الملف). القيم لا تدخل المستودع أبداً.
+9. أعطِ كل اسم في `.env.example` قيمته — باستثناء `ENCRYPTION_MASTER_KEY_PREVIOUS` الذي يبقى فارغاً (يُستخدم فقط أثناء تدوير المفتاح الرئيسي)، وباستثناء المتغيرات الاختيارية الثلاثة `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` التي تبقى فارغة أيضاً ما لم تُضف مشروع Firebase الخاص بك لإشعارات الدفع (راجع القسم الخاص بذلك أدناه). مصدر كل قيمة موجود في الجدول تحت "ما تحتاجه"؛ وتأتي `OWNER_PASSWORD_HASH`, `OWNER_TOTP_SECRET`, `SESSION_SECRET`, `STOP_KEY_HASH`, `ENCRYPTION_MASTER_KEY` من ملفات الخطوات 4–6. للنشر أدخلها في Vercel تحت **Settings → Environment Variables**؛ وللتشغيل المحلي ضع الأسماء نفسها في ملف `.env` بجانب `package.json` (يتجاهل git هذا الملف). القيم لا تدخل المستودع أبداً.
 
-النتيجة المتوقعة: لكل اسم في `.env.example` قيمة باستثناء `ENCRYPTION_MASTER_KEY_PREVIOUS`. إذا غاب اسم إلزامي يتوقف التطبيق عند بدء التشغيل ويذكر المتغير الناقص.
+النتيجة المتوقعة: لكل اسم في `.env.example` قيمة باستثناء `ENCRYPTION_MASTER_KEY_PREVIOUS` والأسماء الاختيارية الثلاثة `FIREBASE_*`. إذا غاب اسم إلزامي يتوقف التطبيق عند بدء التشغيل ويذكر المتغير الناقص.
 
 10. أنشئ جداول قاعدة البيانات. شغّل هذا مرة واحدة من جهازك مع ضبط `DIRECT_URL` (في `.env` أو في الطرفية)؛ يكرر Vercel الأمر نفسه عند كل نشر، وهذا غير ضار:
 
@@ -301,7 +301,7 @@ npm run rotate:encryption-key
 
 ### 8. ما ليس في هذا الإصدار
 
-لا إشعارات فورية: لا توجد في هذه النسخة قناة إشعارات مُعدّة (لا Firebase/FCM). القفل الحيوي موجود (**الإعدادات → القفل البيومتري**<!-- ad:tabs.settings>lock.heading -->، معطّل افتراضياً) ويحتاج إلى تحقق ببصمة الإصبع أو الوجه على الجهاز الذي تستخدمه. لا يوجد تطبيق أندرويد؛ اللوحة صفحة ويب يمكنك إضافتها إلى الشاشة الرئيسية لهاتفك. تشغيل البوت على حاسوبك غير مدعوم (يُشغَّل المحرك بواسطة Vercel Cron).
+إشعارات الدفع متوقفة افتراضياً: تحتاج إلى مشروع Firebase الخاص بك — راجع قسم «اختياري: أضف مشروع Firebase الخاص بك لإشعارات الدفع» أدناه. القفل الحيوي موجود (**الإعدادات → القفل البيومتري**<!-- ad:tabs.settings>lock.heading -->، معطّل افتراضياً) ويحتاج إلى تحقق ببصمة الإصبع أو الوجه على الجهاز الذي تستخدمه. لا يوجد تطبيق أندرويد؛ اللوحة صفحة ويب يمكنك إضافتها إلى الشاشة الرئيسية لهاتفك. تشغيل البوت على حاسوبك غير مدعوم (يُشغَّل المحرك بواسطة Vercel Cron).
 
 <!-- readme:cost -->
 ## تكلفة التشغيل الشهرية
@@ -389,6 +389,27 @@ npx prisma migrate deploy
 
 النتيجة المتوقعة: يصل النشر إلى **Ready**، ويعيد `https://<مشروعك>.vercel.app/api/health` القيمة `{"ok":true,...}`. تعرض اللوحة حالة المحرك نفسها التي كانت قبل التحديث: المحرك المتوقف يبقى متوقفاً. إذا احتاج الإصدار الجديد متغيراً غير موجود في نشرك فلا يعمل الخادم ويذكر الخطأ المتغير الناقص.
 
+<!-- readme:firebase -->
+## اختياري: أضف مشروع Firebase الخاص بك لإشعارات الدفع
+
+إشعارات الدفع اختيارية و**متوقفة افتراضياً**. لا تحتوي هذه النسخة على أي مشروع Firebase ولا أي مفتاح Firebase ولا أي قيمة Firebase: تولد المتغيرات الثلاثة أدناه فارغة، وما دامت فارغة يعمل البرنامج بشكل طبيعي — تقول اللوحة **الإشعارات متوقفة: لم تتم إضافة Firebase**، ويُكتب كل إيقاف أو إنذار في تبويب السجل كما هو. لتشغيلها بمشروع Firebase الخاص بك اتبع الخطوات الـ4 أدناه؛ تُنفَّذ كل واحدة منها قبل كل إصدار عبر فحص آلي يستخدم بديلاً مُنشأً محلياً لملف حساب خدمة Firebase وبديلاً محلياً لـFirebase (لا يُستخدم حساب Firebase حقيقي). لإيقاف الإشعارات مجدداً احذف المتغيرات الثلاثة وأعد النشر. لا يقيس هذا البرنامج تكلفة Firebase نفسها؛ راجع صفحة أسعار Firebase.
+
+1. في وحدة تحكم Firebase أنشئ مشروعاً خاصاً بك (أو افتح مشروعاً لديك)، وانتقل إلى **Project settings → Service accounts** واضغط **Generate new private key**. يُنزَّل ملف JSON. احفظه خارج مجلد المستودع ولا تُضِفه إلى أي commit أبداً: إنه سرّ مثل مفتاح Binance الخاص بك.
+
+النتيجة المتوقعة: ملف `.json` تتضمن حقوله `project_id` و`client_email` و`private_key`.
+
+2. في Vercel افتح مشروعك ← **Settings → Environment Variables** وأضف ثلاثة متغيرات، كلٌّ منها منسوخ من حقل ملف JSON ذاك: `FIREBASE_PROJECT_ID` ← `project_id` · `FIREBASE_CLIENT_EMAIL` ← `client_email` · `FIREBASE_PRIVATE_KEY` ← `private_key`. بالنسبة إلى `private_key` انسخ القيمة كاملة بما فيها السطر الأول والأخير؛ ويمكن أن تبقى تسلسلات `\n` كما هي. اضبط الثلاثة جميعاً أو لا تضبط أياً منها: إذا ضُبط بعضها فقط تبقى الإشعارات متوقفة وتذكر اللوحة اسم المتغير الناقص أو غير الصحيح (ولا تذكر قيمته أبداً).
+
+النتيجة المتوقعة: الأسماء الثلاثة في القائمة؛ ولا تظهر قيمها في أي مكان في اللوحة ولا في السجلات.
+
+3. أعد نشر المشروع لكي تُقرأ المتغيرات الجديدة (Vercel ← **Deployments** ← أحدث نشر ← **Redeploy**).
+
+النتيجة المتوقعة: في اللوحة يذكر **الإعدادات → الإشعارات** أن الإشعارات مفعّلة.
+
+4. لا يصل الإشعار إلا إلى جهاز سجّل رمز Firebase Cloud Messaging الخاص به لدى تثبيتك: `POST /api/device` بجلسة اللوحة والمحتوى `{"token": "<رمز الجهاز>", "platform": "web"}` (أو `"android"`). لا يوجد في هذه النسخة تطبيق يقوم بذلك نيابةً عنك — لا يوجد تطبيق أندرويد —، لذا فهذه الخطوة لمطوّر يبني عميله الخاص باستخدام Firebase. من دون جهاز مسجّل لا يُرسَل شيء، ويذكر سجلّ الإيقاف أو الإنذار ذلك.
+
+النتيجة المتوقعة: يجيب العنوان بـ`{"ok":true,"devices":1,...}`؛ ويُسلَّم الإيقاف أو الإنذار التالي إلى ذلك الجهاز، ويذكر سجلّه أنه أُرسل.
+
 <!-- readme:faq -->
 ## الأسئلة الشائعة / حل المشكلات
 
@@ -439,7 +460,11 @@ npx prisma migrate deploy
 
 ### هل يرسل هذا البرنامج شيئاً إلى القائم عليه؟
 
-لا. يستدعي فقط Binance (بمفتاحك)، و Neon و Upstash الخاصين بك، و Anthropic (بمفتاحك). حركة الطرف الثالث الوحيدة التي لا يتحكم بها هي قياس بناء Next.js الموصوف في قسم التكلفة، ويمكنك إيقافه بـ `NEXT_TELEMETRY_DISABLED=1`.
+لا. يستدعي فقط Binance (بمفتاحك)، و Neon و Upstash الخاصين بك، و Anthropic (بمفتاحك). حركة الطرف الثالث الوحيدة التي لا يتحكم بها هي قياس بناء Next.js الموصوف في قسم التكلفة، ويمكنك إيقافه بـ `NEXT_TELEMETRY_DISABLED=1`. وفقط إذا أضفت إضافة Firebase الاختيارية فإنه يستدعي أيضاً عناوين تسجيل الدخول لدى Google (OAuth) وFirebase Cloud Messaging بحساب الخدمة الخاص بك.
+
+### يفشل `npx prisma migrate deploy` أثناء التحديث
+
+إذا ظهر في المخرجات `Error: Connection url is empty.` فإن `DIRECT_URL` غير مضبوط في هذه الطرفية: ضع سلسلة اتصال Neon المباشرة (غير المجمّعة) في ملف `.env` بجوار `package.json` (كما في خطوة التثبيت 10)، أو اضبطها في الطرفية، وأعد تشغيل الأمر — لم يتغير شيء في قاعدة البيانات. ولأي رسالة أخرى: لا تعدّل ولا تحذف الملفات في `prisma/migrations` ولا تغيّر الجداول يدوياً؛ شغّل `npx prisma migrate status` لترى أي تغيير ما زال معلّقاً، واسأل في GitHub **Discussions → Q&A** (لا تلصق سلسلة الاتصال أبداً).
 
 ---
 

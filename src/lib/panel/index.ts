@@ -13,6 +13,7 @@ import { STOP_REASONS, type StopReasonCode } from "@/lib/events/stop-reasons";
 import { readHealth, type HealthDeps, type HealthVerdict } from "@/lib/health";
 import { giveBackLevel } from "@/lib/protection/trailing";
 import { pickEnv } from "@/lib/env";
+import { notifyState, type NotifyStateView } from "@/lib/notify";
 import { redisPipeline } from "@/lib/upstash";
 import { fill } from "@/lib/i18n";
 import { srvFor, RECORD_LANG } from "@/lib/i18n/srv";
@@ -143,7 +144,7 @@ export type CapitalView = { ok: true; capital: string | null; quoteAsset: string
 /** Tur 77 (G32 parça 2): Durum sekmesinin "bir bakışta" satırları için YAPILANDIRILMIŞ özet — aynı okumalardan (yeni sorgu YOK). Okunamayan alan null ya da `read: false` (0 değil, Ö-2). */
 export type PanelSummary = { tick: { read: false } | { read: true; at: string | null; late: boolean | null }; openPositions: number | null; lastStop: { read: false } | { read: true; code: string | null; at: string | null };
   health: { state: string; feesUsdt: string; period: string } | null };
-export type PanelView = { engineState: EngineState; riskCaps: RiskCaps; capital: CapitalView; at: string; engine: Card; tick: Card; health: Card; positions: { card: Card; rows: PositionView[] }; alerts: Card[]; sources: string[]; summary: PanelSummary };
+export type PanelView = { notifications: NotifyStateView; engineState: EngineState; riskCaps: RiskCaps; capital: CapitalView; at: string; engine: Card; tick: Card; health: Card; positions: { card: Card; rows: PositionView[] }; alerts: Card[]; sources: string[]; summary: PanelSummary };
 const card = (level: Level, title: string, lines: string[]): Card => ({ level, title, lines });
 /** PANELİN TAMAMI. Fırlatmaz: her okuma ayrı ayrı denenir, düşen okuma "bilinmiyor" olur (Ö-2) ve diğerleri yine gösterilir. `lang`: cümlelerin dili (uç isteğin dilini geçer; yoksa iç kayıt dili). */
 export async function readPanel(deps: PanelDeps = {}, lang: string = RECORD_LANG): Promise<PanelView> {
@@ -218,5 +219,6 @@ export async function readPanel(deps: PanelDeps = {}, lang: string = RECORD_LANG
     openPositions: rows.ok ? views.filter((x) => x.open).length : null,
     lastStop: !stop.ok ? { read: false } : { read: true, code: stop.v === null ? null : codeOf(stop.v.reason), at: stop.v === null ? null : new Date(stop.v.at).toISOString() },
     health: health.ok ? { state: health.v.state, feesUsdt: health.v.fees, period: health.v.period } : null };
-  return { engineState, riskCaps, capital: capitalView, at: new Date(now).toISOString(), engine, tick: tickCard, health: healthCard, positions: { card: posCard, rows: views }, alerts, sources, summary };
+  // Tur 82 (D2): bildirim eklentisinin durumu yalnız ad sözleşmesinden (Neon/Upstash okuması YOK ⇒ açılış maliyeti değişmez); değer taşımaz.
+  return { notifications: notifyState(), engineState, riskCaps, capital: capitalView, at: new Date(now).toISOString(), engine, tick: tickCard, health: healthCard, positions: { card: posCard, rows: views }, alerts, sources, summary };
 }

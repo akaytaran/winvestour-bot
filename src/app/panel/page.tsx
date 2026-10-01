@@ -148,6 +148,16 @@ const sonucMetni = (status: number, niye: string, ret403: string) =>
     : status === 503 ? fill(T.common.storeDown, { why: niye ? fill(T.common.serverSaid, { why: niye }) : "" })
     : fill(T.common.unexpected, { why: niye ? fill(T.common.serverSaid, { why: niye }) : "" });
 
+// Tur 82 (G20 FCM kalemi · KARAR-DEFTERI 1 Eki 2026 D2): bildirim İSTEĞE BAĞLI Firebase eklentisidir — durum sunucudan (ad sözleşmesi), dürüst cümle; değişken ADI yalnız Technical details'te, değer hiç.
+function BildirimDurumu({ n }: { n: PanelView["notifications"] | undefined }) {
+  if (!n) return <p style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{T.common.unknown}</p>;
+  const [baslik, neden] = n.state === "ON" ? [T.notify.on, T.notify.onWhy] : n.state === "INVALID" ? [T.notify.invalid, fill(T.notify.invalidWhy, { details: T.common.technicalDetails })] : [T.notify.off, fill(T.notify.offWhy, { history: T.tabs.history })];
+  return (<section data-bildirim={n.state} style={box(n.state === "INVALID" ? "WARN" : "INFO")} aria-label={T.notify.heading}>
+    <p style={{ margin: ".2rem 0", lineHeight: 1.5, fontWeight: 600 }}>{baslik}</p>
+    <p style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{neden}</p>
+    {n.state === "INVALID" && <TeknikAyrinti satirlar={[fill(T.technical.firebaseNames, { names: n.names.join(", ") })]} />}
+  </section>);
+}
 function GirisSalteriYuzeyi({ ayar, yenile }: { ayar: EntryView | null; yenile: () => Promise<void> }) {
   const GIRIS_ONAY_UYARI = T.entry.consent.warning;
   const GIRIS_ONAY_RISK = T.entry.consent.risk;
@@ -1049,6 +1059,9 @@ export default function Panel() {
           <h2 id="giris-salteri" style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>{T.entry.heading}</h2>
           <p data-ne-yapar style={NE}>{T.entry.what}</p>
           <GirisSalteriYuzeyi ayar={giris} yenile={load} />
+
+          <h2 id="bildirim-ayari" style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>{T.notify.heading}</h2>
+          <BildirimDurumu n={v.notifications} />
 
           <h2 id="kilit-ayari" style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>{T.lock.heading}</h2>
           <KilitAyarYuzeyi ayar={kilitAyar} dogrulayiciVar={dogrulayici} yenile={kilitAyariniYenile} yer="panel" />

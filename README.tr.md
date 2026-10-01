@@ -32,7 +32,7 @@
 - **Çekim izni olmadan oluşturulmuş, Ed25519 türünde bir Binance API anahtarı.** Çekim ya da evrensel transfer izni açık bir anahtar reddedilir ve hiç saklanmaz.
 - Kurulum komutları için bilgisayarında **Node.js ve npm**, toplamda yaklaşık **bir saat**.
 
-Bu kopya yazarına ait hiçbir şey taşımaz: kod hiçbir alan adı okumaz, ortam sözleşmesinde Android paket adı ya da imza parmak izi yok ve Firebase/FCM yapılandırması ya da değişkeni yok. Aşağıdakilerin hepsi boş doğar; sen kendi değerlerinle doldurursun.
+Bu kopya yazarına ait hiçbir şey taşımaz: kod hiçbir alan adı okumaz, ortam sözleşmesinde Android paket adı ya da imza parmak izi yok ve isteğe bağlı anlık bildirim eklentisinin üç Firebase değişkeni boş doğar, yani bildirimler kapalıdır. Aşağıdakilerin hepsi boş doğar; sen kendi değerlerinle doldurursun.
 
 | Ortam değişkeni | Değer nereden gelir |
 |---|---|
@@ -83,8 +83,8 @@ You are helping me install winvestour-bot, a self-hosted crypto trading bot for 
      Check: binance-private-key.pem, binance-public-key.pem appear in the folder. On Binance choose Profile → API Management → Create API → Self-generated and paste the contents of the second file (the public key); you paste the first file (the private key) into the panel later ("First use").
   8. Create an empty PostgreSQL database
      Check: two strings that start with `postgresql://`; the database has no tables yet.
-  9. Give every name in `.env.example` its value — except `ENCRYPTION_MASTER_KEY_PREVIOUS`, which stays empty (it is used only during a master-key rotation)
-     Check: every name in `.env.example` except `ENCRYPTION_MASTER_KEY_PREVIOUS` has a value. If a required name is missing, the application stops at startup and names the missing variable.
+  9. Give every name in `.env.example` its value — except `ENCRYPTION_MASTER_KEY_PREVIOUS`, which stays empty (it is used only during a master-key rotation), and the three optional `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, which also stay empty unless you add your own Firebase for push notifications (see that section below)
+     Check: every name in `.env.example` except `ENCRYPTION_MASTER_KEY_PREVIOUS` and the three optional `FIREBASE_*` names has a value. If a required name is missing, the application stops at startup and names the missing variable.
   10. Create the database tables
      Command: `npx prisma migrate deploy`
      Check: the output ends with `All migrations have been successfully applied.` A single migration named `0_baslangic` is applied; every settings table starts with one row; the risk settings are empty and switched off.
@@ -174,9 +174,9 @@ Beklenen sonuç: klasörde `binance-private-key.pem`, `binance-public-key.pem` o
 
 Beklenen sonuç: `postgresql://` ile başlayan iki dize; veritabanında henüz tablo yok.
 
-9. `.env.example` dosyasındaki her ada değerini ver — `ENCRYPTION_MASTER_KEY_PREVIOUS` hariç; o boş kalır (yalnız ana anahtar dönüşünde kullanılır). Hangi değerin nereden geldiği "Ne gerekir" başlığındaki tabloda; `OWNER_PASSWORD_HASH`, `OWNER_TOTP_SECRET`, `SESSION_SECRET`, `STOP_KEY_HASH`, `ENCRYPTION_MASTER_KEY` değerleri 4–6. adımların dosyalarından gelir. Dağıtım için bunları Vercel'de **Settings → Environment Variables** altına gir; yerel çalıştırma için aynı adları `package.json` yanındaki bir `.env` dosyasına yaz (git o dosyayı yok sayar). Değerler depoya girmez.
+9. `.env.example` dosyasındaki her ada değerini ver — `ENCRYPTION_MASTER_KEY_PREVIOUS` hariç; o boş kalır (yalnız ana anahtar dönüşünde kullanılır); isteğe bağlı üç ad `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` de, anlık bildirimler için kendi Firebase'ini eklemedikçe boş kalır (aşağıdaki ilgili bölüme bak). Hangi değerin nereden geldiği "Ne gerekir" başlığındaki tabloda; `OWNER_PASSWORD_HASH`, `OWNER_TOTP_SECRET`, `SESSION_SECRET`, `STOP_KEY_HASH`, `ENCRYPTION_MASTER_KEY` değerleri 4–6. adımların dosyalarından gelir. Dağıtım için bunları Vercel'de **Settings → Environment Variables** altına gir; yerel çalıştırma için aynı adları `package.json` yanındaki bir `.env` dosyasına yaz (git o dosyayı yok sayar). Değerler depoya girmez.
 
-Beklenen sonuç: `.env.example` dosyasındaki `ENCRYPTION_MASTER_KEY_PREVIOUS` dışındaki her adın bir değeri var. Zorunlu bir ad eksikse uygulama açılışta durur ve eksik adı söyler.
+Beklenen sonuç: `.env.example` dosyasındaki `ENCRYPTION_MASTER_KEY_PREVIOUS` ve isteğe bağlı üç `FIREBASE_*` adı dışındaki her adın bir değeri var. Zorunlu bir ad eksikse uygulama açılışta durur ve eksik adı söyler.
 
 10. Veritabanı tablolarını kur. Bunu bilgisayarından bir kez, `DIRECT_URL` ayarlıyken (`.env` içinde ya da terminalde) çalıştır; Vercel aynı komutu her dağıtımda yineler, bunun zararı yoktur:
 
@@ -259,7 +259,7 @@ Motor çalışırken kartta kırmızı **DURDUR**<!-- ad:engine.stop --> düğme
 
 ### 8. Bu sürümde olmayanlar
 
-Anlık bildirim yok: bu kopyada bildirim taşıyıcısı yapılandırılmadı (Firebase/FCM yok). Biyometrik kilit var (**Ayarlar → Biyometrik kilit**<!-- ad:tabs.settings>lock.heading -->, varsayılan kapalı) ve kullandığın cihazda parmak izi ya da yüz doğrulaması ister. Android uygulaması yok; panel, telefonunun ana ekranına ekleyebileceğin bir web sayfasıdır. Botu kendi bilgisayarında çalıştırmak desteklenmiyor (motoru Vercel Cron tetikler).
+Anlık bildirimler varsayılan olarak kapalıdır: kendi Firebase projeni ister — aşağıdaki "İsteğe bağlı: anlık bildirimler için kendi Firebase'ini ekle" bölümüne bak. Biyometrik kilit var (**Ayarlar → Biyometrik kilit**<!-- ad:tabs.settings>lock.heading -->, varsayılan kapalı) ve kullandığın cihazda parmak izi ya da yüz doğrulaması ister. Android uygulaması yok; panel, telefonunun ana ekranına ekleyebileceğin bir web sayfasıdır. Botu kendi bilgisayarında çalıştırmak desteklenmiyor (motoru Vercel Cron tetikler).
 
 <!-- readme:cost -->
 ## Aylık çalıştırma maliyeti
@@ -335,6 +335,27 @@ Beklenen sonuç: yeni sürüm veritabanı değişikliği getiriyorsa çıktı `A
 
 Beklenen sonuç: dağıtım **Ready** olur ve `https://<projen>.vercel.app/api/health` `{"ok":true,...}` döner. Panel güncellemeden önceki motor durumunu gösterir: duran motor durmaya devam eder. Yeni sürüm dağıtımında olmayan bir değişken isterse sunucu açılmaz ve hata eksik adı söyler.
 
+<!-- readme:firebase -->
+## İsteğe bağlı: anlık bildirimler için kendi Firebase'ini ekle
+
+Anlık bildirimler isteğe bağlıdır ve **varsayılan olarak kapalıdır**. Bu kopyada hiçbir Firebase projesi, Firebase anahtarı ya da Firebase değeri yok: aşağıdaki üç değişken boş doğar ve boşken yazılım normal çalışır — panel **Bildirimler kapalı: Firebase eklenmedi** der ve her durma ya da alarm yine Geçmiş sekmesine yazılır. Kendi Firebase projenle açmak için aşağıdaki 4 adımı izle; her biri her yayından önce, Firebase servis hesabı dosyasının yerelde üretilmiş bir benzeri ve Firebase'in yerel bir benzeriyle çalışan otomatik bir denetimle denenir (gerçek bir Firebase hesabı kullanılmaz). Bildirimleri yeniden kapatmak için üç değişkeni sil ve yeniden dağıt. Bu yazılım Firebase'in kendi maliyetini ölçmez; Firebase'in fiyat sayfasına bak.
+
+1. Firebase konsolunda kendine ait bir proje oluştur (ya da olan birini aç), **Project settings → Service accounts** bölümüne git ve **Generate new private key** düğmesine bas. Bir JSON dosyası iner. Onu depo klasörünün dışında tut ve asla commit'leme: Binance anahtarın gibi bir sırdır.
+
+Beklenen sonuç: alanları arasında `project_id`, `client_email` ve `private_key` olan bir `.json` dosyası.
+
+2. Vercel'de projeni aç → **Settings → Environment Variables** ve üç değişken ekle; her birini o JSON dosyasının alanından kopyala: `FIREBASE_PROJECT_ID` ← `project_id` · `FIREBASE_CLIENT_EMAIL` ← `client_email` · `FIREBASE_PRIVATE_KEY` ← `private_key`. `private_key` için ilk ve son satırı dahil bütün değeri kopyala; `\n` dizileri olduğu gibi kalabilir. Üçünü birden gir ya da hiçbirini girme: yalnız bazıları girilirse bildirimler kapalı kalır ve panel eksik ya da bozuk değişkenin adını söyler (değerini asla).
+
+Beklenen sonuç: üç ad listede; değerleri panelde ve kayıtlarda hiçbir yerde görünmez.
+
+3. Yeni değişkenler okunsun diye projeyi yeniden dağıt (Vercel → **Deployments** → en son dağıtım → **Redeploy**).
+
+Beklenen sonuç: panelde **Ayarlar → Bildirimler** bildirimlerin açık olduğunu söyler.
+
+4. Bildirim yalnız Firebase Cloud Messaging jetonunu kurulumuna kaydetmiş bir cihaza ulaşır: panel oturumunla `POST /api/device`, gövde `{"token": "<cihazın jetonu>", "platform": "web"}` (ya da `"android"`). Bu kopyada bunu senin yerine yapan bir uygulama yok — Android uygulaması yok —, yani bu adım Firebase ile kendi istemcisini yazan bir geliştirici içindir. Kayıtlı cihaz yoksa hiçbir şey gönderilmez ve durma ya da alarm kaydı bunu söyler.
+
+Beklenen sonuç: uç `{"ok":true,"devices":1,...}` döner; bir sonraki durma ya da alarm o cihaza iletilir ve kaydı gönderildiğini söyler.
+
 <!-- readme:faq -->
 ## SSS / sorun giderme
 
@@ -385,7 +406,11 @@ Binance ABD konumlarından gelen istekleri engeller. `vercel.json` fonksiyonlar�
 
 ### Bu yazılım yazarına bir şey gönderiyor mu?
 
-Hayır. Yalnız Binance'i (senin anahtarınla), kendi Neon ve Upstash'ini ve Anthropic'i (senin anahtarınla) çağırır. Denetlemediği tek üçüncü taraf trafiği, maliyet bölümünde anlatılan Next.js derleme telemetrisidir; `NEXT_TELEMETRY_DISABLED=1` ile kapatabilirsin.
+Hayır. Yalnız Binance'i (senin anahtarınla), kendi Neon ve Upstash'ini ve Anthropic'i (senin anahtarınla) çağırır. Denetlemediği tek üçüncü taraf trafiği, maliyet bölümünde anlatılan Next.js derleme telemetrisidir; `NEXT_TELEMETRY_DISABLED=1` ile kapatabilirsin. Yalnız isteğe bağlı Firebase eklentisini eklersen, kendi servis hesabınla Google'ın oturum açma (OAuth) ve Firebase Cloud Messaging uçlarını da çağırır.
+
+### Güncelleme sırasında `npx prisma migrate deploy` hata veriyor
+
+Çıktı `Error: Connection url is empty.` diyorsa bu terminalde `DIRECT_URL` tanımlı değildir: doğrudan (havuzsuz) Neon bağlantı dizesini `package.json`ın yanındaki `.env` dosyasına koy (kurulum adımı 10'daki gibi) ya da terminalde tanımla ve komutu yeniden çalıştır — veritabanında hiçbir şey değişmedi. Başka bir iletide: `prisma/migrations` içindeki dosyaları düzenleme ya da silme ve tabloları elle değiştirme; hangi değişikliğin beklediğini görmek için `npx prisma migrate status` çalıştır ve GitHub **Discussions → Q&A** bölümünde sor (bağlantı dizesini asla yapıştırma).
 
 ---
 

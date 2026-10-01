@@ -451,7 +451,18 @@ export const EN = {
     PROTECTION_LOST: "Protective order missing on the exchange", PROTECTION_UNVERIFIABLE: "Protective order could not be checked", TICK_MISSED: "A run was missed", CHAIN_BREAK: "The engine's run chain broke and was rebuilt",
     other: "a recorded engine event (full text in the Technical tab)", none: "no separate reason recorded",
   }) satisfies ReasonNames,
+  // Tur 82 (G20 FCM kalemi · KARAR-DEFTERI 1 Eki D2): bildirim İSTEĞE BAĞLI eklentidir — durum yalnız ad sözleşmesinden (Firebase değişkenleri), değer gösterilmez.
+  notify: {
+    heading: "Notifications",
+    off: "Notifications are off: Firebase has not been added",
+    offWhy: "This is how a new installation starts. Everything else works without it: every stop and alarm is still written to the {history} tab. To turn notifications on with your own Firebase project, follow the README section \"Optional: add your own Firebase for push notifications\".",
+    on: "Notifications are on: Firebase is set up",
+    onWhy: "A notification reaches only a device that has registered with this installation; without one nothing is sent, and the record of the stop or alarm says so.",
+    invalid: "Notifications are off: the Firebase settings are incomplete or malformed",
+    invalidWhy: "Nothing is sent until all three Firebase variables are set correctly, or all three are removed. {details} names the variables to check; their values are never shown.",
+  },
   technical: {
+    firebaseNames: "Firebase variables missing or malformed (names only, never values): {names}",
     intro: "Everything below is the full, measured detail the panel reads. The engine, run and health cards and the position lines are the server's own sentences.",
     engineHeading: "Engine", positionsHeading: "Positions", alertsHeading: "Warnings (full text)",
     sourcesHeading: "Where the numbers on this page come from",
@@ -471,6 +482,7 @@ export const EN = {
     brainApplied: "the change takes effect AT ONCE: the engine reads the setting at every planning run; no redeploy is needed",
     brainTightened: "setting changed (a direction that lowers spending, no code asked); it takes effect at once and was written to the change log",
     deviceRegistered: "this device will receive notifications; the app refreshes the registration at every opening",
+    deviceRegisteredOff: "the device was registered, but notifications are OFF: Firebase has not been added to this installation, so nothing is sent to it yet",
     entryApplied: "entry switch changed; it takes effect AT ONCE (no redeploy needed). Even when it is ON, an order also needs the Binance key, capital, risk settings and a running engine. Protection, exits and stopping are NOT affected by this setting.",
     lockApplied: "lock setting changed; it takes effect AT ONCE (no redeploy needed). This setting does not start or stop the engine and sends no order; the stop screen does not depend on this lock.",
     riskFuturesAllowed: "the setting allows futures; the futures ORDER PATH is not written yet — no order is sent anyway",

@@ -16,7 +16,10 @@
 //   → TUR 29 (K1, 2026-09-17): tam muafiyet KALKTI — kapatılamaz sınıf kendi penceresiyle (2 dk) elenir, diğerleri 30 dk. İki sayı da ayardır (`notify_settings`).
 import { STOP_REASONS, type RequestKind, type StopReasonCode } from "@/lib/events/stop-reasons";
 import { upstashDedupStore, type DedupStore } from "./dedup";
-import { human, loadNotifySettings, prismaNotifySettingsStore, type NotifySettingsStore } from "./settings";
+import { human, loadNotifySettings, NOTIFY_STORE_BUDGET_MS, prismaNotifySettingsStore, type NotifySettingsStore } from "./settings";
+import { readFirebaseEnv, type FirebaseEnv } from "@/lib/env";
+import { prismaDeviceStore, type DeviceStore } from "./devices";
+import { fcmTransport } from "./fcm";
 
 export type Level = "INFO" | "WARN" | "ALARM";
 /** Bir bildirimin metni (U-3): ne oldu · paraya etkisi ne · ne yapılacak. `title` kilit ekranına çıkar; `what`/`money`/`next` yalnız uygulama içindir. */
@@ -134,15 +137,24 @@ export function buildNotification(code: string, at: Date, now: number): BuiltNot
 }
 
 export type SendResult = { ok: true; id: string } | { ok: false; error: string };
-/** Taşıyıcı arayüzü: gerçek FCM köprüsü BUNUN ARKASINA yazılır (bu turda yazılmadı — ortamda taşıyıcı adı yok, madde 0 ölçümü). */
+/** Taşıyıcı arayüzü: gerçek FCM köprüsü BUNUN ARKASINA yazılır — Tur 82: `./fcm.ts` (isteğe bağlı Firebase eklentisi, D2). */
 export interface NotifyTransport { readonly name: string; send(payload: PushPayload): Promise<SendResult> }
 /** KAPALI ARIZA: taşıyıcı yapılandırılmadığında gönderim BAŞARISIZ döner. "Gönderildi" saymak yasaktır (U-2); sonuç durma olayına yazılır (K-8). */
-export const unconfiguredTransport = (): NotifyTransport => ({ name: "YAPILANDIRILMADI", send: async () => ({ ok: false, error: "cihaz bildirim köprüsü kurulmadı" }) });
+export const unconfiguredTransport = (): NotifyTransport => ({ name: "YAPILANDIRILMADI", send: async () => ({ ok: false, error: "bildirim kapalı: Firebase eklenmedi (isteğe bağlı eklenti, değişkenler boş)" }) });
+/** TUR 82 (D2) — YARIM/BOZUK Firebase yapılandırması: KAPALI ARIZA. Gönderim yapılmaz, yalnız ADLAR söylenir (değer asla — S-2). */
+export const misconfiguredTransport = (names: readonly string[]): NotifyTransport => ({ name: "YARIM_YAPILANDIRMA", send: async () => ({ ok: false, error: `Firebase değişkenleri eksik ya da bozuk (${names.join(", ")}): bildirim gönderilmedi` }) });
 export type MutePreference = { readonly mutedCodes: readonly string[] };
 /** KAPALI VARSAYILAN: hiçbir bildirim kapalı değil. Tur 28: kapatma tercihinin SAKLANDIĞI yer `notify_settings` (Neon); bu sabit yalnız "ayar okunamadı" ve kapı/kanarya yolunun karşılığıdır. */
 export const NOTHING_MUTED: MutePreference = { mutedCodes: [] };
 /** ÜRETİM TAŞIYICISI — çağıran seçmez, unutamaz (kapı: ikinci gönderim yolu KIRMIZI). Bugün TEK dal var: taşıyıcı yapılandırılmadı (madde 1 ölçümü). Köprü geldiğinde değişecek tek satır BURASIDIR. */
-export const defaultTransport = (): NotifyTransport => unconfiguredTransport();
+/** TUR 82 (G20 FCM kalemi · KARAR-DEFTERI 1 Eki 2026 D2): üç dal, ad sözleşmesinden (src/lib/env.ts `readFirebaseEnv`) — üç değişken BOŞ ⇒ YAPILANDIRILMADI (kapalı, hata yok) ·
+ *  YARIM/BOZUK ⇒ YARIM_YAPILANDIRMA (kapalı arıza) · DOLU ⇒ FIREBASE (cihaz deposu yalnız burada kurulur; gönderim durdurma deposu bütçesiyle kesilir, K-7). `opts` yalnız kapı/kanarya içindir (S-9). */
+export const defaultTransport = (fb: FirebaseEnv = readFirebaseEnv(), opts: { devices?: DeviceStore; endpoints?: { token: string; send: string } } = {}): NotifyTransport =>
+  fb.state === "ON" ? fcmTransport(fb.cfg, { devices: opts.devices ?? prismaDeviceStore(), timeoutMs: NOTIFY_STORE_BUDGET_MS, endpoints: opts.endpoints })
+    : fb.state === "INVALID" ? misconfiguredTransport(fb.names) : unconfiguredTransport();
+/** Panelin bildirim durumu (Tur 82): yalnız durum ve ADLAR — değer, proje kimliği, e-posta TAŞIMAZ. */
+export type NotifyStateView = { state: "OFF" | "ON" | "INVALID"; names: string[] };
+export const notifyState = (fb: FirebaseEnv = readFirebaseEnv()): NotifyStateView => ({ state: fb.state, names: fb.state === "INVALID" ? [...fb.names] : [] });
 export type NotifyDeps = { transport?: NotifyTransport; mute?: MutePreference; settings?: NotifySettingsStore; dedup?: DedupStore; now?: () => number };
 export type Delivery = { sent: boolean; muted: boolean; suppressed: boolean; transport: string; id: string | null; error: string | null; sentence: string };
 /** BİLDİRİMİ GÖNDEREN TEK YOL. Gönderilemeyen bildirim `sent:false` döner ve `sentence` durma olayının sebebine yazılır (çağıran onu düşüremez — kapı). Kuyruk ve yeniden deneme YOK (U-2).

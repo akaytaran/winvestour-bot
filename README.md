@@ -30,7 +30,7 @@
 - **A Binance API key of type Ed25519, created without withdrawal permission.** A key with withdrawals or universal transfer enabled is rejected and never stored.
 - **Node.js and npm** on your computer for the setup commands, and about **one hour** in total.
 
-This copy carries nothing of the maintainer's: the code reads no domain name, there is no Android package name or signing fingerprint in the environment contract, and there is no Firebase/FCM configuration or variable. Everything below is born empty, and you fill it in with your own values.
+This copy carries nothing of the maintainer's: the code reads no domain name, there is no Android package name or signing fingerprint in the environment contract, and the three Firebase variables of the optional push-notification add-on are born empty, so notifications are off. Everything below is born empty, and you fill it in with your own values.
 
 | Environment variable | Where the value comes from |
 |---|---|
@@ -81,8 +81,8 @@ You are helping me install winvestour-bot, a self-hosted crypto trading bot for 
      Check: binance-private-key.pem, binance-public-key.pem appear in the folder. On Binance choose Profile → API Management → Create API → Self-generated and paste the contents of the second file (the public key); you paste the first file (the private key) into the panel later ("First use").
   8. Create an empty PostgreSQL database
      Check: two strings that start with `postgresql://`; the database has no tables yet.
-  9. Give every name in `.env.example` its value — except `ENCRYPTION_MASTER_KEY_PREVIOUS`, which stays empty (it is used only during a master-key rotation)
-     Check: every name in `.env.example` except `ENCRYPTION_MASTER_KEY_PREVIOUS` has a value. If a required name is missing, the application stops at startup and names the missing variable.
+  9. Give every name in `.env.example` its value — except `ENCRYPTION_MASTER_KEY_PREVIOUS`, which stays empty (it is used only during a master-key rotation), and the three optional `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, which also stay empty unless you add your own Firebase for push notifications (see that section below)
+     Check: every name in `.env.example` except `ENCRYPTION_MASTER_KEY_PREVIOUS` and the three optional `FIREBASE_*` names has a value. If a required name is missing, the application stops at startup and names the missing variable.
   10. Create the database tables
      Command: `npx prisma migrate deploy`
      Check: the output ends with `All migrations have been successfully applied.` A single migration named `0_baslangic` is applied; every settings table starts with one row; the risk settings are empty and switched off.
@@ -172,9 +172,9 @@ Expected result: `binance-private-key.pem`, `binance-public-key.pem` appear in t
 
 Expected result: two strings that start with `postgresql://`; the database has no tables yet.
 
-9. Give every name in `.env.example` its value — except `ENCRYPTION_MASTER_KEY_PREVIOUS`, which stays empty (it is used only during a master-key rotation). Where each value comes from is in the table under "What you need"; `OWNER_PASSWORD_HASH`, `OWNER_TOTP_SECRET`, `SESSION_SECRET`, `STOP_KEY_HASH`, `ENCRYPTION_MASTER_KEY` come from the files of steps 4–6. For the deployment, enter them in Vercel under **Settings → Environment Variables**; for a local run, put the same names in a `.env` file next to `package.json` (git ignores that file). Values never enter the repository.
+9. Give every name in `.env.example` its value — except `ENCRYPTION_MASTER_KEY_PREVIOUS`, which stays empty (it is used only during a master-key rotation), and the three optional `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, which also stay empty unless you add your own Firebase for push notifications (see that section below). Where each value comes from is in the table under "What you need"; `OWNER_PASSWORD_HASH`, `OWNER_TOTP_SECRET`, `SESSION_SECRET`, `STOP_KEY_HASH`, `ENCRYPTION_MASTER_KEY` come from the files of steps 4–6. For the deployment, enter them in Vercel under **Settings → Environment Variables**; for a local run, put the same names in a `.env` file next to `package.json` (git ignores that file). Values never enter the repository.
 
-Expected result: every name in `.env.example` except `ENCRYPTION_MASTER_KEY_PREVIOUS` has a value. If a required name is missing, the application stops at startup and names the missing variable.
+Expected result: every name in `.env.example` except `ENCRYPTION_MASTER_KEY_PREVIOUS` and the three optional `FIREBASE_*` names has a value. If a required name is missing, the application stops at startup and names the missing variable.
 
 10. Create the database tables. Run this once from your computer with `DIRECT_URL` set (in `.env` or in the terminal); Vercel repeats the same command on every deployment, which is harmless:
 
@@ -257,7 +257,7 @@ While the engine runs, the card shows a red **STOP**<!-- ad:engine.stop --> butt
 
 ### 8. What this release does not have
 
-No push notifications: this copy has no notification carrier configured (no Firebase/FCM). The biometric lock exists (**Settings → Biometric lock**<!-- ad:tabs.settings>lock.heading -->, off by default) and needs a fingerprint or face check on the device you use. There is no Android app; the panel is a web page you can add to your phone's home screen. Running the bot on your own computer is not supported (the engine is triggered by Vercel Cron).
+Push notifications are off by default: they need your own Firebase project — see the section "Optional: add your own Firebase for push notifications" below. The biometric lock exists (**Settings → Biometric lock**<!-- ad:tabs.settings>lock.heading -->, off by default) and needs a fingerprint or face check on the device you use. There is no Android app; the panel is a web page you can add to your phone's home screen. Running the bot on your own computer is not supported (the engine is triggered by Vercel Cron).
 
 <!-- readme:cost -->
 ## Monthly running cost
@@ -333,6 +333,27 @@ Expected result: the output ends with `All migrations have been successfully app
 
 Expected result: the deployment reaches **Ready** and `https://<your-project>.vercel.app/api/health` returns `{"ok":true,...}`. The panel shows the same engine state as before the update: a stopped engine stays stopped. If the new version needs a variable your deployment does not have, the server does not start and the error names the missing variable.
 
+<!-- readme:firebase -->
+## Optional: add your own Firebase for push notifications
+
+Push notifications are optional and **off by default**. This copy contains no Firebase project, no Firebase key and no Firebase value: the three variables below are born empty, and while they are empty the software runs normally — the panel says **Notifications are off: Firebase has not been added**, and every stop or alarm is still written to the History tab. To turn them on with your own Firebase project, follow the 4 steps below; each of them is exercised before each release by an automated check that uses a locally generated stand-in for the Firebase service-account file and a local stand-in for Firebase (no real Firebase account is used). To turn notifications off again, delete the three variables and redeploy. This software does not measure Firebase's own cost; check Firebase's pricing page.
+
+1. In the Firebase console create a project of your own (or open one you already have), go to **Project settings → Service accounts** and press **Generate new private key**. A JSON file is downloaded. Keep it outside the repository folder and never commit it: it is a secret, like your Binance key.
+
+Expected result: a `.json` file whose fields include `project_id`, `client_email` and `private_key`.
+
+2. In Vercel open your project → **Settings → Environment Variables** and add three variables, each copied from the field of that JSON file: `FIREBASE_PROJECT_ID` ← `project_id` · `FIREBASE_CLIENT_EMAIL` ← `client_email` · `FIREBASE_PRIVATE_KEY` ← `private_key`. For `private_key` copy the whole value, including its first and last lines; the `\n` sequences may stay as they are. Set all three or none: with only some of them, notifications stay off and the panel names the missing or malformed variable (never its value).
+
+Expected result: the three names are in the list; their values are not shown anywhere in the panel or in the logs.
+
+3. Redeploy the project so the new variables are read (Vercel → **Deployments** → the latest deployment → **Redeploy**).
+
+Expected result: in the panel, **Settings → Notifications** says that notifications are on.
+
+4. A notification reaches only a device that has registered its Firebase Cloud Messaging token with your installation: `POST /api/device` with your panel session and the body `{"token": "<the device's token>", "platform": "web"}` (or `"android"`). This copy has no app that does this for you — there is no Android app — so this step is for a developer who builds their own client with Firebase. Without a registered device nothing is sent, and the record of the stop or alarm says so.
+
+Expected result: the endpoint answers `{"ok":true,"devices":1,...}`; the next stop or alarm is delivered to that device, and its record says it was sent.
+
 <!-- readme:faq -->
 ## FAQ / troubleshooting
 
@@ -383,7 +404,11 @@ Binance blocks requests from US locations. `vercel.json` pins the functions to t
 
 ### Does this software send anything to its maintainer?
 
-No. It calls only Binance (with your key), your own Neon and Upstash, and Anthropic (with your key). The only third-party traffic it does not control is the Next.js build telemetry described in the cost section, which you can switch off with `NEXT_TELEMETRY_DISABLED=1`.
+No. It calls only Binance (with your key), your own Neon and Upstash, and Anthropic (with your key). The only third-party traffic it does not control is the Next.js build telemetry described in the cost section, which you can switch off with `NEXT_TELEMETRY_DISABLED=1`. Only if you add the optional Firebase add-on does it also call Google's sign-in (OAuth) and Firebase Cloud Messaging endpoints, with your own service account.
+
+### `npx prisma migrate deploy` fails during an update
+
+If the output says `Error: Connection url is empty.`, `DIRECT_URL` is not set in this terminal: put the direct (unpooled) Neon connection string into the `.env` file next to `package.json` (as in installation step 10), or set it in the terminal, and run the command again — nothing was changed in the database. For any other message: do not edit or delete files in `prisma/migrations` and do not change tables by hand; run `npx prisma migrate status` to see which change is still pending, and ask in GitHub **Discussions → Q&A** (never paste the connection string).
 
 ---
 
