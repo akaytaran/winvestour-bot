@@ -32,3 +32,11 @@ export function judgeCarryExposure(i: { capital: string; openExposure: string; l
   const v = judgeExposure({ capital: i.capital, openExposure: i.openExposure, newNotional: g.gross, totalPct: i.totalPct, singlePct: i.singlePct });
   return { ...v, workings: [g.workings, ...v.workings] };
 }
+
+/** SAF. FUTURES BACAĞININ K-9 hükmü (Tur 84 · G22 kutusu d · Karar 3 ile aynı ilke). Futures girişi tek bacaktır: büyüklüğü BRÜT nominaldir (miktar × fiyat) — teminat DEĞİL, kaldıraçla
+ *  BÖLÜNMEZ; açık maruziyet (SPOT + futures, `prismaExposureReader` işaretsiz toplar) üstüne YENİ maruziyet olarak `judgeExposure`'a gider (toplam tavan + tek pozisyon payı). Ölçülemezse karar yok (Ö-2). */
+export function judgeFuturesLegExposure(i: { capital: string; openExposure: string; notional: string; totalPct: string | null; singlePct: string | null }): ExposureVerdict {
+  if (!NUM.test(i.notional)) return { ok: false, refusal: "EXPOSURE_UNKNOWN", detail: `futures bacağı büyüklüğü ölçülemedi (${i.notional})`, workings: [] };
+  const v = judgeExposure({ capital: i.capital, openExposure: i.openExposure, newNotional: i.notional, totalPct: i.totalPct, singlePct: i.singlePct });
+  return { ...v, workings: [`futures bacağı brüt nominal ${new D(i.notional).toFixed(8)} (miktar × fiyat; teminat sayılmaz, kaldıraçla bölünmez) açık SPOT + futures maruziyetine eklenir (K-9)`, ...v.workings] };
+}

@@ -52,6 +52,7 @@ export const STOP_REASONS = {
   EDGE_BELOW_THRESHOLD: { kind: "POSITION_SKIPPED", rule: "M-2/M-4", label: "beklenen hareket, ölçülen gidiş-dönüş maliyetin üç katının altında; pozisyon açılmadı", source: "G13 asgari kenar" },
   UNIVERSE_REJECTED: { kind: "POSITION_SKIPPED", rule: "A-2/M-4", label: "çift evren ölçütlerini geçmedi (yayılma/asgari tutar/derinlik/hacim); pozisyon açılmadı", source: "G13 coin evreni" },
   EXPOSURE_CEILING: { kind: "POSITION_SKIPPED", rule: "K-9/M-4", label: "portföy ya da tek pozisyon tavanı aşılıyor veya tavan bilinmiyor; pozisyon açılmadı", source: "G13 portföy tavanı" },
+  FUTURES_EDGE_BELOW_THRESHOLD: { kind: "POSITION_SKIPPED", rule: "M-2/M-3/M-4", label: "futures girişi kenar kapısını geçmedi: beklenen hareket, ölçülen futures giriş maliyetinin (komisyon + yayılma + derinlik + tutma süresince funding) M-2 futures çarpanı katının altında ya da eşik kurulamadı (çarpan boş, tutma süresi yok, futures kapalı); pozisyon açılmadı", source: "G22 futures kenarı" },
   COST_UNMEASURABLE: { kind: "STOPPED", rule: "M-2/M-1", label: "gidiş-dönüş maliyet bileşeni (komisyon/yayılma/derinlik) ölçülemedi; giriş yok, çıkış/koruma geçer", source: "G13 maliyet hesaplayıcısı" },
   // G11 emir yolu — Tur 14 düzeltmeleri (K-8 boşluğu kapatıldı): borsanın İŞ HATASIYLA reddettiği emir de olay yazar; imza damgası gönderimden önce yaşlanırsa emir çıkmaz
   ORDER_REJECTED: { kind: "STOPPED", rule: "K-8", label: "borsa emri iş hatasıyla reddetti (filtre/bakiye/damga); emir oluşmadı", source: "G11 emir yolu" },

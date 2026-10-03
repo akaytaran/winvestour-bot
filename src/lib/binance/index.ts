@@ -19,7 +19,17 @@ export const BINANCE_HOST = "https://api.binance.com";
  *  sayacını paylaşırlar — ÖLÇÜLDÜ (Tur 35 futures ön ölçüm kaydı). Bu yüzden ana makine YOLDAN, sayaç kapsamı `scopeOf`tan gelir; ikisi aynı şey DEĞİLDİR. */
 export const FUTURES_HOST = "https://fapi.binance.com", COIN_FUTURES_HOST = "https://dapi.binance.com";
 /** Yolun gideceği ana makine. Tek yer: `send` buradan okur; kapı boğaz dışında ana makine adı aramayı sürdürür. */
-export const hostOf = (path: string) => (path.startsWith("/fapi/") ? FUTURES_HOST : path.startsWith("/dapi/") ? COIN_FUTURES_HOST : BINANCE_HOST);
+/** TUR 83 (G21 · S-9 · iş sahibi kararı D2: G21/G22'nin bitiş ölçütü Binance Futures TESTNET) — USDS-M testnet REST ana makinesi. Belge (developers.binance.com, USDS-M Futures "General Info"):
+ *  "The REST base url for testnet is https://demo-fapi.binance.com". YALNIZ test yolunda seçilir: istemci `futuresTarget: "testnet"` ile kurulursa /fapi/ yolu buraya gider. COIN-M (/dapi/) testneti YOK. */
+export const FUTURES_TESTNET_HOST = "https://demo-fapi.binance.com";
+export type FuturesTarget = "production" | "testnet";
+/** FUTURES ANA MAKİNESİNİN TEK SEÇİM YERİ. DAĞITIMDA TESTNET SEÇİLEMEZ: Vercel ortamında (VERCEL tanımlı — üretim ve önizleme) testnet hedefi istenirse ana makine VERİLMEZ (null) ve çağrı çıkmaz. */
+export const futuresHostFor = (t: FuturesTarget, env: Record<string, string | undefined> = process.env): string | null => (t === "testnet" ? (env.VERCEL ? null : FUTURES_TESTNET_HOST) : FUTURES_HOST);
+/** Yolun gideceği ana makine, istemcinin futures hedefine göre. /dapi/ testnette yoktur (null). */
+export const hostFor = (path: string, t: FuturesTarget = "production"): string | null =>
+  (path.startsWith("/fapi/") ? futuresHostFor(t) : path.startsWith("/dapi/") ? (t === "testnet" ? null : COIN_FUTURES_HOST) : BINANCE_HOST);
+/** Üretim hedefinin ana makinesi (Tur 35 adı korunur; kapı ve kanaryalar üretim adresini buradan görür). */
+export const hostOf = (path: string) => hostFor(path, "production") as string;
 /** Tavan önbellek süresi (sicil, geri alınabilir): exchangeInfo 20 weight; saatte bir okumak dakikalık tavanın binde 3'ü. Süre dolunca yeniden okunur; okunamazsa sessiz eski değer YOK. */
 export const CEILING_TTL_SEC = 3600;
 /** Tavanın okunduğu çağrı. Ağırlık 20: Tur 0 başlık deltası (Tur 0 raporu madde 6a). Tek sembol istenir; rateLimits bloğu sembolden bağımsızdır. */
@@ -47,7 +57,8 @@ export type Transport = (url: string, headers?: Record<string, string>, method?:
 /** `method`: gözlemcinin "gerçek emir gönderildi mi" sorusunu URL'ye BAKARAK yanıtlaması yanlıştır — `GET /api/v3/order` (sorgu) ve `DELETE` (iptal) emir OLUŞTURMAZ.
  *  Emir yalnız `POST /api/v3/order` ile oluşur; yöntem bu yüzden gözleme girer (Tur 14 bulgusu: yöntemsiz dedektör provada sahte "gerçek emir" alarmı verdi). */
 export type Observation = TransportResponse & { url: string; method: HttpMethod; ms: number };
-export type Deps = { store: BudgetStore; transport?: Transport; now?: () => number; observe?: (o: Observation) => void };
+/** `futuresTarget` (Tur 83): YALNIZ test yolu "testnet" verir (kapı: gate:binance-budget T83 — ürün kodunda testnet hedefi KIRMIZI). Verilmezse üretim. */
+export type Deps = { store: BudgetStore; transport?: Transport; now?: () => number; observe?: (o: Observation) => void; futuresTarget?: FuturesTarget };
 /** Gönderim sonrası depo hatası: yanıt elde, sayaç hizalanamadı/askı yazılamadı. Yanıt atılmaz (Tur 8 madde 4). */
 export type PostSendStoreFailure = { storeFailed: true; detail: "store-unavailable-after-send" };
 export type BinanceResult<T = unknown> =
@@ -65,12 +76,12 @@ const POST_SEND_FAILED: PostSendStoreFailure = { storeFailed: true, detail: "sto
 
 /** İstemci kur. Üretim: getBinance(). Kapı/kanarya: sahte depo/taşıyıcı enjekte eder (S-9); ürün kodunda enjeksiyon YOK (kapı denetler). */
 export function createBinanceClient(deps: Deps) {
-  const store = deps.store, transport = deps.transport ?? fetchTransport, now = deps.now ?? Date.now;
+  const store = deps.store, transport = deps.transport ?? fetchTransport, now = deps.now ?? Date.now, futuresTarget: FuturesTarget = deps.futuresTarget ?? "production";
   const mem: Partial<Record<CeilingSet, { ceilings: Ceiling[]; expiresAt: number }>> = {};
 
   const send = async (path: string, query?: Record<string, string>, headers?: Record<string, string>, method: HttpMethod = "GET", observe?: (o: Observation) => void): Promise<TransportResponse> => {
     const qs = query && Object.keys(query).length ? "?" + new URLSearchParams(query).toString() : "";
-    const url = hostOf(path) + path + qs, t0 = performance.now(), r = await transport(url, headers, method);
+    const url = hostFor(path, futuresTarget) + path + qs, t0 = performance.now(), r = await transport(url, headers, method);
     const o: Observation = { ...r, url, method, ms: +(performance.now() - t0).toFixed(1) };
     deps.observe?.(o); observe?.(o);
     return r;
@@ -124,6 +135,10 @@ export function createBinanceClient(deps: Deps) {
       try {
         if (!/^\/[\w\-./]+$/.test(call.path)) return { ok: false, reason: "STOPPED", detail: "bad-path", sent };
         const scope = scopeOf(call.path);
+        // TUR 83 (S-9): hedefin ana makinesi yoksa (dağıtımda testnet · testnette /dapi/) çağrı ÇIKMAZ. Testnet istemcisi SPOT imzalı çağrı YAPAMAZ: SPOT yolu gerçek borsaya gider ve
+        //   testnet ölçümüne verilen anahtar gerçek borsada imza taşımamalıdır. İkisi de tavan/rezervasyon turlarından ÖNCE düşer (sayaç artmaz).
+        if (hostFor(call.path, futuresTarget) === null) return { ok: false, reason: "STOPPED", detail: `futures-target-refused:${futuresTarget}-${call.path.startsWith("/dapi/") ? "has-no-coin-m" : "in-deployment"}`, sent };
+        if (futuresTarget === "testnet" && scope !== "futures" && call.query?.signature !== undefined) return { ok: false, reason: "STOPPED", detail: "testnet-client-spot-signed-refused", sent };
         const c = await ceilings(scope); if (!Array.isArray(c)) return isDenied(c) ? denied(c, sent) : c;
         // ASKI + REZERVASYON tek atomik depo adımı (Tur 20): askı varsa sayaç artmaz; pay aşılırsa geri alınır. Sıra korunur: tavan → askı → rezervasyon → gönderim → mutabakat.
         const dec = await reserve(store, c, call, now()); if (!dec.allowed) return denied(dec, sent);

@@ -124,7 +124,7 @@ export const IT_SRV = {
     summary: {
       capUnset: "tetto della leva NON SCELTO (vuoto ⇒ futures chiusi)", cap: "tetto della leva {cap}×", m2Unset: "multiplo futures M-2 NON SCELTO (vuoto ⇒ il vantaggio futures non si può misurare)", m2: "multiplo futures M-2 {m2}× (multiplo del costo)",
       modeNone: "modalità SHORT NONE: solo long, il comportamento di oggi", mode: "modalità SHORT {mode}", on: "ON", off: "OFF",
-      line: "{cap} · interruttore dei futures {futures} · {mode} · {m2} — percorso futures {path}.", pathOpen: "APERTO secondo l'impostazione (il percorso degli ordini non è ancora scritto: G21 item f)", pathClosed: "CHIUSO: {refusal}",
+      line: "{cap} · interruttore dei futures {futures} · {mode} · {m2} — percorso futures {path}.", pathOpen: "APERTO secondo l'impostazione (il motore non pianifica ancora operazioni futures; il percorso futures viene provato prima sulla testnet)", pathClosed: "CHIUSO: {refusal}",
     },
     write: { readFailed: "non è stato possibile leggere l'impostazione ({name})", noRow: "manca la riga risk_settings (id=1); la migrazione potrebbe non essere applicata", writeFailed: "non è stato possibile scrivere l'impostazione o il registro E-1 ({name}) — l'impostazione NON È CAMBIATA" },
     modes: {
@@ -146,7 +146,7 @@ export const IT_SRV = {
     readFailed: "non è stato possibile leggere risk_profile ({name})", writeReadFailed: "non è stato possibile leggere le quote di rischio ({name}) — non è cambiato nulla", writeFailed: "non è stato possibile scrivere le quote di rischio o il record della modifica ({name}) — non è cambiato nulla",
   },
   leverage: {
-    commissionUnmeasured: "livello di commissione futures non letto: la chiamata firmata /fapi/v1/commissionRate arriva con il percorso degli ordini futures (G21 item f, A-5); non si usa il livello spot né un tasso d'esempio",
+    commissionUnmeasured: "livello di commissione futures non letto: in un'installazione il lettore firmato /fapi/v1/commissionRate viene collegato solo dopo la verifica sulla testnet di Binance Futures (G21 casella 6); non si usa il livello spot né un tasso d'esempio",
     text: {
       invalid: "Non è stato possibile leggere la richiesta: vanno indicati insieme un simbolo (ad es. il nome della coppia in maiuscolo) e una leva (un numero intero pari o superiore a 1). Non è cambiato nulla.",
       aboveCap: "La leva richiesta SUPERA il tetto, quindi la richiesta è stata RIFIUTATA. Il software non abbassa di nascosto la richiesta al tetto e non sceglie un numero al posto tuo; richiedi una leva sotto il tetto, oppure cambia il tetto nelle impostazioni di rischio (richiede un codice).",
@@ -155,9 +155,12 @@ export const IT_SRV = {
       unrecorded: "Non è stato possibile scrivere il record della richiesta nel registro degli eventi, quindi la richiesta è stata RIFIUTATA: una richiesta di leva senza record non viene né applicata né riportata. Non è cambiato nulla; riprova un po' più tardi.",
       k6Window: "Subito prima di aprire la leva, il canary della doppia esecuzione (K-6: lo stesso segnale non può essere eseguito due volte) deve essere stato eseguito con successo sul codice di QUESTO deployment nelle ultime {hours} ore; quel record manca o non è leggibile, quindi la richiesta è stata RIFIUTATA. La richiesta è stata scritta nel registro, nessuna chiamata è andata alla borsa e la leva NON È CAMBIATA.",
       driverUnavailable: "Il carico di commissioni e funding è stato misurato ed è scritto qui sopra (questi due carichi non sono l'intera soglia di ingresso: lo spread denaro-lettera e la profondità del book sono misurati a parte nella decisione di ingresso, M-2). La richiesta è stata accettata perché è entro il tetto ed è stata scritta nel registro; ma il driver che scrive la leva sulla borsa è ancora CHIUSO, quindi nessuna chiamata è andata alla borsa e la leva NON È CAMBIATA.",
+      aboveBracket: "La leva richiesta rientra nel tuo limite ma è SOPRA il limite dell'exchange per questo simbolo, quindi la richiesta è stata RIFIUTATA: vale il limite più basso e il software non abbassa la richiesta in silenzio. Richiedi una leva pari o inferiore al limite dell'exchange indicato nei dettagli. Non è cambiato nulla.",
+      exchangeUnavailable: "L'exchange non era raggiungibile per questa richiesta di leva (il limite non è stato letto o la chiamata non è stata inviata), quindi la leva NON è stata scritta. Non è cambiato nulla; riprova più tardi.",
     },
     preview: "Anteprima: la leva richiesta è entro il tetto, il carico di commissioni e funding è stato misurato ed è scritto qui sopra. È solo un'anteprima: nulla è stato salvato o applicato. Se la richiesta viene inviata con un codice monouso, viene scritta nel registro e passata al driver che scrive la leva sulla borsa.",
     unknownText: "La richiesta di leva è stata passata al driver che scrive sulla borsa, ma il driver non ha potuto confermare il risultato: se la leva è cambiata sulla borsa è SCONOSCIUTO. Il record è stato chiuso come \"risultato sconosciuto\"; ora il software non può confermarlo leggendo dalla borsa. Controlla tu la leva sulla borsa prima di richiederla di nuovo.",
+    appliedText: "Applicato: l'exchange ha confermato {lev}× per {symbol} (il limite dell'exchange per questo simbolo è {max}×). La richiesta e il suo risultato sono scritti nel registro eventi.",
     detail: {
       invalid: "symbol={symbol} leverage={leverage}", capNull: "risk_settings.leverage_cap NULL — K-11: senza tetto non c'è leva", aboveCap: "richiesta {req}× > tetto {cap}× (risk_settings.leverage_cap) — non abbassata al tetto",
       keyNoFutures: "exchange_keys.enable_futures = {value} — nessuna chiamata inviata alla borsa", accepted: "entro il tetto · futures aperti · chiave autorizzata · carico misurato — l'applicazione spetta al driver (G21 item f)",

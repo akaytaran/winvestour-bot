@@ -8,7 +8,7 @@ import { signedTimestamp } from "@/lib/binance/time";
 import { prismaKeySource, RECV_WINDOW_MS } from "@/lib/exchange-key";
 import { withSignedCall } from "@/lib/exchange-key/sign";
 import { requestWithEvents, type ExchangeDeps, type GuardedResult } from "@/lib/events/exchange";
-import { IDENTITY_RATE, type CapitalReading, type RateReading } from "./index";
+import { IDENTITY_RATE, fundingRef, recordFunding, recordFundingReceived, type CapitalReading, type Deps as LedgerDeps, type RateReading } from "./index";
 
 /** Ağırlıklar: account 20 (Tur 7 B, başlık deltasıyla ölçüldü); ticker/price sembolsüz 4 ve tek sembol 2 (Binance belgesi; Tur 4'te 10 sembol → 4 ölçüldü). Sapmayı G05 başlık mutabakatı düzeltir. */
 export const ACCOUNT_CALL = { path: "/api/v3/account", cls: "DISCOVERY", weight: 20 } as const;
@@ -67,4 +67,33 @@ export async function readRate(asset: string, quote: string, deps: ReaderDeps = 
   if (!r.result.ok) return { ok: false, detail: `${symbol}:${r.result.reason ?? ""}:${r.result.detail}` };
   const px = r.result.data?.price; if (typeof px !== "string" || !NUM.test(px)) return { ok: false, detail: `${symbol}:bad-price` };
   return { ok: true, rate: px, source: `ticker/price ${symbol} @${new Date((deps.now ?? Date.now)()).toISOString()}` };
+}
+
+// ---- FUNDING DEFTERİ (Tur 83 · G21 kalemi h / kutu 8 · M-3, M-1, Ö-1, Ö-2) ----
+// Borsanın gelir kaydı (imzalı `GET /fapi/v1/income?incomeType=FUNDING_FEE`) deftere yazılır: NEGATİF tutar = ÖDENEN funding (`recordFunding`, bütçe toplamına girer) · POZİTİF = ALINAN
+//   (`recordFundingReceived`, yalnız kâr; Tur 39 Karar 2). Anahtar `funding:<SEMBOL>:<ödeme anı ms>` TEKİLDİR: aynı kayıt ikinci eşitlemede yazılmaz (FUNDING_DUPLICATE sayılır, toplam artmaz).
+//   Defterin para birimi dışındaki varlıkla gelen satır ÇEVRİLMEZ (kur icat edilmez) — atlanır ve sonuçta adıyla sayılır. Okuma DISCOVERY sınıfıdır; emir yolu yoktur.
+export const FUNDING_INCOME_CALL = { path: "/fapi/v1/income", cls: "DISCOVERY", weight: 30 } as const;
+export type FundingSync = { ok: true; read: number; paid: number; received: number; duplicate: number; skipped: { ref: string; why: string }[]; source: string } | { ok: false; detail: string };
+type IncomeRow = { symbol?: unknown; incomeType?: unknown; income?: unknown; asset?: unknown; time?: unknown };
+export async function syncFundingIncome(sinceMs: number, deps: ReaderDeps & { ledger?: LedgerDeps; quote?: string } = {}): Promise<FundingSync> {
+  const now = deps.now ?? Date.now, quote = deps.quote ?? "USDT", k = await (deps.key ?? prismaKey)(); if (!k) return { ok: false, detail: "no-exchange-key" };
+  const ts = await signedTimestamp({ exchange: deps.exchange, events: deps.exchange?.events, now });
+  if (!ts.ok) return { ok: false, detail: `clock:${ts.refusal}:${ts.detail}` };
+  let r: GuardedResult<IncomeRow[]>;
+  try { r = await withSignedCall(k.api, k.priv, { incomeType: "FUNDING_FEE", startTime: String(sinceMs), timestamp: ts.timestamp, recvWindow: String(RECV_WINDOW_MS) }, (h, q) => requestWithEvents<IncomeRow[]>({ ...FUNDING_INCOME_CALL, query: q, headers: h }, deps.exchange), deps.ring); }
+  catch (e) { return { ok: false, detail: `income:${errName(e)}` }; }
+  if (!r.result.ok) return { ok: false, detail: `income:${r.result.reason ?? ""}:${r.result.detail}` };
+  const rows = (Array.isArray(r.result.data) ? r.result.data : []).filter((x) => x.incomeType === "FUNDING_FEE");
+  let paid = 0, received = 0, duplicate = 0; const skipped: { ref: string; why: string }[] = [];
+  for (const x of rows) {
+    const sym = typeof x.symbol === "string" ? x.symbol : "", at = typeof x.time === "number" ? x.time : NaN, amt = typeof x.income === "string" ? x.income : "";
+    const ref = Number.isFinite(at) ? fundingRef(sym, at) : `funding:${sym}:?`;
+    if (!/^-?\d+(\.\d+)?$/.test(amt) || !Number.isFinite(at)) { skipped.push({ ref, why: "tutar ya da an okunamadı" }); continue; }
+    if (x.asset !== quote) { skipped.push({ ref, why: `varlık ${String(x.asset)} ≠ defter ${quote} (kur icat edilmez)` }); continue; }
+    const v = new D(amt); if (v.isZero()) { skipped.push({ ref, why: "tutar 0" }); continue; }
+    const out = v.isNegative() ? await recordFunding({ ref, amount: v.abs().toFixed(), at: new Date(at) }, deps.ledger) : await recordFundingReceived({ ref, amount: v.toFixed(), at: new Date(at) }, deps.ledger);
+    if (out.ok) { if (v.isNegative()) paid++; else received++; } else if (out.reason === "FUNDING_DUPLICATE") duplicate++; else skipped.push({ ref, why: `${out.reason}: ${out.detail}` });
+  }
+  return { ok: true, read: rows.length, paid, received, duplicate, skipped, source: `income FUNDING_FEE since ${new Date(sinceMs).toISOString()} @${new Date(now()).toISOString()}` };
 }

@@ -125,7 +125,7 @@ export const EN_SRV = {
     summary: {
       capUnset: "leverage cap NOT CHOSEN (empty ⇒ futures closed)", cap: "leverage cap {cap}×", m2Unset: "M-2 futures multiple NOT CHOSEN (empty ⇒ the futures edge cannot be measured)", m2: "M-2 futures multiple {m2}× (multiple of the cost)",
       modeNone: "SHORT mode NONE: long only, today's behaviour", mode: "SHORT mode {mode}", on: "ON", off: "OFF",
-      line: "{cap} · futures switch {futures} · {mode} · {m2} — futures path {path}.", pathOpen: "OPEN according to the setting (the order path is not written yet: G21 item f)", pathClosed: "CLOSED: {refusal}",
+      line: "{cap} · futures switch {futures} · {mode} · {m2} — futures path {path}.", pathOpen: "OPEN according to the setting (the engine does not plan futures trades yet; the futures path is tested on the testnet first)", pathClosed: "CLOSED: {refusal}",
     },
     write: { readFailed: "the setting could not be read ({name})", noRow: "risk_settings row missing (id=1); the migration may not be applied", writeFailed: "the setting or the E-1 log could not be written ({name}) — the setting did NOT CHANGE" },
     modes: {
@@ -147,7 +147,7 @@ export const EN_SRV = {
     readFailed: "risk_profile could not be read ({name})", writeReadFailed: "the risk shares could not be read ({name}) — nothing was changed", writeFailed: "the risk shares or the change record could not be written ({name}) — nothing was changed",
   },
   leverage: {
-    commissionUnmeasured: "futures commission tier not read: the signed /fapi/v1/commissionRate call comes with the futures order path (G21 item f, A-5); the spot tier or an example rate is not used",
+    commissionUnmeasured: "futures commission tier not read: in an installation the signed /fapi/v1/commissionRate reader is connected only after the Binance Futures testnet check (G21 box 6); the spot tier or an example rate is not used",
     text: {
       invalid: "The request could not be read: a symbol (e.g. the pair name in capitals) and a leverage (a whole number of 1 or more) must be given together. Nothing changed.",
       aboveCap: "The requested leverage EXCEEDS the cap, so the request was REFUSED. The software does not quietly lower the request to the cap and does not choose a number for you; request a leverage below the cap, or change the cap in the risk settings (needs a code).",
@@ -156,9 +156,12 @@ export const EN_SRV = {
       unrecorded: "The request's record could not be written to the event log, so the request was REFUSED: a leverage request without a record is neither applied nor reported. Nothing changed; try again a little later.",
       k6Window: "Right before leverage is opened, the double-execution canary (K-6: the same signal cannot be executed twice) must have run successfully on THIS deployment's code within the last {hours} hours; that record is missing or could not be read, so the request was REFUSED. The request was written to the log, no call went to the exchange and the leverage DID NOT CHANGE.",
       driverUnavailable: "The commission and funding load were measured and are written above (these two loads are not the whole entry threshold: the bid-ask spread and the order book depth are measured separately in the entry decision, M-2). The request was accepted because it is within the cap and was written to the log; but the driver that writes the leverage to the exchange is still CLOSED, so no call went to the exchange and the leverage DID NOT CHANGE.",
+      aboveBracket: "The requested leverage is within your cap but ABOVE the exchange's own limit for this symbol, so the request was REFUSED: the lower limit applies, and the software does not quietly lower the request. Request a leverage at or below the exchange limit written in the details. Nothing changed.",
+      exchangeUnavailable: "The exchange could not be reached for this leverage request (the limit could not be read or the call was not sent), so the leverage was NOT written. Nothing changed; try again later.",
     },
     preview: "Preview: the requested leverage is within the cap, the commission and funding load were measured and are written above. This is only a preview: nothing was saved or applied. If the request is sent with a one-time code, it is written to the log and passed to the driver that writes the leverage to the exchange.",
     unknownText: "The leverage request was passed to the driver that writes to the exchange, but the driver could not confirm the result: whether the leverage changed on the exchange is UNKNOWN. The record was closed as \"result unknown\"; the software cannot confirm this now by reading from the exchange. Check the leverage on the exchange yourself before requesting again.",
+    appliedText: "Applied: the exchange confirmed {lev}× for {symbol} (the exchange's limit for this symbol is {max}×). The request and its result are written to the event log.",
     detail: {
       invalid: "symbol={symbol} leverage={leverage}", capNull: "risk_settings.leverage_cap NULL — K-11: there is no leverage without a cap", aboveCap: "requested {req}× > cap {cap}× (risk_settings.leverage_cap) — not lowered to the cap",
       keyNoFutures: "exchange_keys.enable_futures = {value} — no call was sent to the exchange", accepted: "within the cap · futures open · key authorised · load measured — applying is the driver's (G21 item f)",

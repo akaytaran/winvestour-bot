@@ -124,7 +124,7 @@ export const FR_SRV = {
     summary: {
       capUnset: "plafond de levier NON CHOISI (vide ⇒ futures fermés)", cap: "plafond de levier {cap}×", m2Unset: "multiple futures M-2 NON CHOISI (vide ⇒ l'avantage futures ne peut pas être mesuré)", m2: "multiple futures M-2 {m2}× (multiple du coût)",
       modeNone: "mode SHORT NONE : long uniquement, le comportement actuel", mode: "mode SHORT {mode}", on: "ACTIVÉ", off: "DÉSACTIVÉ",
-      line: "{cap} · interrupteur futures {futures} · {mode} · {m2} — voie futures {path}.", pathOpen: "OUVERTE selon le réglage (la voie d'ordres n'est pas encore écrite : G21 item f)", pathClosed: "FERMÉE : {refusal}",
+      line: "{cap} · interrupteur futures {futures} · {mode} · {m2} — voie futures {path}.", pathOpen: "OUVERTE selon le réglage (le moteur ne planifie pas encore d'opérations futures ; le chemin futures est d'abord essayé sur le testnet)", pathClosed: "FERMÉE : {refusal}",
     },
     write: { readFailed: "le réglage n'a pas pu être lu ({name})", noRow: "ligne risk_settings manquante (id=1) ; la migration n'est peut-être pas appliquée", writeFailed: "le réglage ou le journal E-1 n'a pas pu être écrit ({name}) — le réglage n'a PAS CHANGÉ" },
     modes: {
@@ -146,7 +146,7 @@ export const FR_SRV = {
     readFailed: "risk_profile n'a pas pu être lu ({name})", writeReadFailed: "les parts de risque n'ont pas pu être lues ({name}) — rien n'a été modifié", writeFailed: "les parts de risque ou l'enregistrement de modification n'ont pas pu être écrits ({name}) — rien n'a été modifié",
   },
   leverage: {
-    commissionUnmeasured: "palier de commission futures non lu : l'appel signé /fapi/v1/commissionRate arrive avec la voie d'ordres futures (G21 item f, A-5) ; le palier spot ou un taux d'exemple n'est pas utilisé",
+    commissionUnmeasured: "palier de commission futures non lu : dans une installation, le lecteur signé /fapi/v1/commissionRate n'est branché qu'après la vérification sur le testnet Binance Futures (G21 case 6) ; le palier spot ou un taux d'exemple n'est pas utilisé",
     text: {
       invalid: "La demande n'a pas pu être lue : un symbole (par exemple le nom de la paire en majuscules) et un levier (un nombre entier de 1 ou plus) doivent être donnés ensemble. Rien n'a changé.",
       aboveCap: "Le levier demandé DÉPASSE le plafond, la demande a donc été REFUSÉE. Le logiciel ne ramène pas discrètement la demande au plafond et ne choisit pas de nombre à ta place ; demande un levier sous le plafond, ou modifie le plafond dans les réglages de risque (demande un code).",
@@ -155,9 +155,12 @@ export const FR_SRV = {
       unrecorded: "L'enregistrement de la demande n'a pas pu être écrit dans le journal des événements, la demande a donc été REFUSÉE : une demande de levier sans enregistrement n'est ni appliquée ni signalée. Rien n'a changé ; réessaie un peu plus tard.",
       k6Window: "Juste avant l'ouverture d'un levier, le canari de double exécution (K-6 : un même signal ne peut pas être exécuté deux fois) doit avoir tourné avec succès sur le code de CE déploiement au cours des {hours} dernières heures ; cet enregistrement manque ou n'a pas pu être lu, la demande a donc été REFUSÉE. La demande a été écrite au journal, aucun appel n'est parti vers la plateforme et le levier N'A PAS CHANGÉ.",
       driverUnavailable: "La charge de commission et de funding a été mesurée et figure ci-dessus (ces deux charges ne sont pas tout le seuil d'entrée : l'écart achat-vente et la profondeur du carnet d'ordres sont mesurés séparément dans la décision d'entrée, M-2). La demande a été acceptée car elle est sous le plafond et a été écrite au journal ; mais le pilote qui écrit le levier sur la plateforme est encore FERMÉ, aucun appel n'est donc parti vers la plateforme et le levier N'A PAS CHANGÉ.",
+      aboveBracket: "Le levier demandé est dans ton plafond mais AU-DESSUS de la limite propre de la plateforme pour ce symbole, donc la demande a été REFUSÉE : la limite la plus basse s'applique et le logiciel ne baisse pas la demande en silence. Demande un levier égal ou inférieur à la limite de la plateforme indiquée dans les détails. Rien n'a changé.",
+      exchangeUnavailable: "La plateforme n'a pas pu être jointe pour cette demande de levier (la limite n'a pas pu être lue ou l'appel n'a pas été envoyé), donc le levier n'a PAS été écrit. Rien n'a changé ; réessaie plus tard.",
     },
     preview: "Aperçu : le levier demandé est sous le plafond, la charge de commission et de funding a été mesurée et figure ci-dessus. Ce n'est qu'un aperçu : rien n'a été enregistré ni appliqué. Si la demande est envoyée avec un code à usage unique, elle est écrite au journal et transmise au pilote qui écrit le levier sur la plateforme.",
     unknownText: "La demande de levier a été transmise au pilote qui écrit sur la plateforme, mais le pilote n'a pas pu confirmer le résultat : on ne sait PAS si le levier a changé sur la plateforme. L'enregistrement a été clos comme \"résultat inconnu\" ; le logiciel ne peut pas le confirmer maintenant en lisant la plateforme. Vérifie toi-même le levier sur la plateforme avant de redemander.",
+    appliedText: "Appliqué : la plateforme a confirmé {lev}× pour {symbol} (la limite de la plateforme pour ce symbole est {max}×). La demande et son résultat sont écrits dans le journal des événements.",
     detail: {
       invalid: "symbol={symbol} leverage={leverage}", capNull: "risk_settings.leverage_cap NULL — K-11 : pas de levier sans plafond", aboveCap: "demandé {req}× > plafond {cap}× (risk_settings.leverage_cap) — non ramené au plafond",
       keyNoFutures: "exchange_keys.enable_futures = {value} — aucun appel n'a été envoyé à la plateforme", accepted: "sous le plafond · futures ouverts · clé autorisée · charge mesurée — l'application revient au pilote (G21 item f)",

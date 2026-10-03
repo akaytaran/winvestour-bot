@@ -20,10 +20,11 @@ import { withSignedCall } from "@/lib/exchange-key/sign";
 import { stopEngine, type EmitResult } from "@/lib/events";
 import { requestWithEvents } from "@/lib/events/exchange";
 import { executeSignal, type Deps as ExecDeps, type Dispatch, type ExecuteOutcome, type OrderRow } from "@/lib/execution-lock/execute";
-import { screenFutures } from "@/lib/risk-settings";
+import { CLOSED_SHORT_MODE, FUTURES_REFUSALS, readRiskRuntime, type SettingsStore } from "@/lib/risk-settings";
+import { readOrderFills, readSymbolLeverage } from "./futures-signed";
 import { entrySwitch, type EntrySwitchStore } from "@/lib/entry-settings";
 import { deriveClientOrderId, type SignalKey } from "@/lib/execution-lock";
-import { applyRules, readAvgPrice, readSymbolRules, type Adjusted, type SymbolRules } from "./filters";
+import { applyRules, readAvgPrice, readFuturesSymbolRules, readMarkPrice, readSymbolRules, type Adjusted, type SymbolRules } from "./filters";
 import { readFreeAsset, readRate } from "@/lib/fee-ledger/exchange";
 import { Prisma } from "@/generated/prisma/client";
 
@@ -43,6 +44,33 @@ export const STOP_TRIGGER_TYPES = ["STOP_LOSS", "TAKE_PROFIT", "STOP_LOSS_LIMIT"
 /** `oco`: iki bacaklı korumanin (stop + hedef) TEK ATOMIK ucu. G12 tek bacak gonderir (hedef orani A-1 ACIK); ikinci bacak gerektiginde YALNIZ bu uc kullanilir --
  *  iki bagimsiz emir + kendi iptal mantigimiz K-1 ihlalidir. Olculdu 2026-09-09: iki sembolde de `ocoAllowed: true`. Bu turda GONDERILMEZ (kapi olcer). */
 export const ORDER_PATHS = { live: "/api/v3/order", test: "/api/v3/order/test", oco: "/api/v3/orderList/oco" } as const;
+/** TUR 83 (G21 kalemi f İKİNCİ DİLİM · K-1/K-2/K-6/K-7/K-11 · iş sahibi kararı D2): FUTURES (USDS-M) EMİR YOLU. AYNI sarmalayıcıdan geçer (kimlik → izin → kilit → bütçe → boğaz → kayıt);
+ *  farklı olan yalnız uç, tür kümesi, kurallar ve sorgu biçimidir. Gönderilebilir türler Binance USDS-M belgesinden; koruma `STOP_MARKET` (K-1'in futures adı), korumalar ve çıkışlar `reduceOnly`.
+ *  Futures yanıtı dolum ayrıntısı taşımaz (RESULT) ⇒ komisyon emrin işlemlerinden okunur (`./futures-signed` readOrderFills) ve aynı M-1 mutabakatına girer. Ana makineyi boğaz seçer (üretim/testnet, S-9).
+ *  ÖN KAPI YALNIZ GİRİŞTE: ayar (tavan · şalter · short · M-2 çarpanı) ve hesaptaki sembol kaldıracı (K-11) yalnız ENTRY'de okunur — çıkış ve koruma hiçbir ayara bağlanamaz (M-1/K-1/K-2). */
+export const FUTURES_ORDER_PATHS = { live: "/fapi/v1/order", test: "/fapi/v1/order/test" } as const;
+export const FUTURES_SENDABLE_TYPES = ["LIMIT", "MARKET", "STOP_MARKET", "TAKE_PROFIT_MARKET"] as const;
+export const FUTURES_STOP_TRIGGER_TYPES = ["STOP_MARKET", "TAKE_PROFIT_MARKET"] as const;
+export const FUTURES_PROTECTION_TYPE = "STOP_MARKET" as const;
+export const FUTURES_RESPONSE_TYPE = "RESULT";
+/** TUR 86 (G21 kutu 6 · K-1 · Üretim S15-1 = A): Binance USDS-M KOŞULLU emirleri (STOP_MARKET/TAKE_PROFIT_MARKET) `/fapi/v1/order`'dan ALMAZ — testnet HTTP 400 `-4120 STOP_ORDER_SWITCH_ALGO`
+ *  (Tur 85 ölçümü). Futures KORUMASI Algo Order API'ye gider: `POST /fapi/v1/algoOrder` (algoType CONDITIONAL, triggerPrice, reduceOnly, kimlik `clientAlgoId` = aynı belirlenimci kimlik), sorgu `GET`
+ *  ve iptal `DELETE` aynı uçta `algoId` ile. Belge: Binance USDS-M "New Algo Order (TRADE)" · "Query Algo Order" · "Cancel Algo Order" (USDS-M Futures belgesi, Trade bölümü).
+ *  KİMLİK AÇIKTIR: borsadaki algo emri `ALGO:<algoId>` olarak taşınır (orders.exchange_order_id, positions.protection_order_id) — sorgu/iptal yolu ucu bu önekten seçer; önek yoksa futures'ta
+ *  `/fapi/v1/order`, SPOT'ta `/api/v3/order` (SPOT kimliği önek TAŞIMAZ). Algo ucunun doğrulama (test) karşılığı YOKTUR ⇒ test kipinde koşullu emir GÖNDERİLMEZ (kapalı arıza). */
+export const FUTURES_ALGO_PATH = "/fapi/v1/algoOrder", FUTURES_ALGO_TYPE = "CONDITIONAL", ALGO_ID_PREFIX = "ALGO:";
+/** Algo emrinin durumu (`algoStatus`, belge): NEW borsada bekliyor · TRIGGERING tetik sağlandı, eşleştirme motoruna iletiliyor (henüz gerçek emir yok) · TRIGGERED/FINISHED motora geçti (gerçek emir
+ *  `actualOrderId`) · CANCELED/EXPIRED/REJECTED. Emir diline çeviri (K-1 denetimi emir dilinde konuşur): NEW → "NEW" (duruyor), TRIGGERING → "PENDING_NEW" (yerleşmek üzere; kayıp sayılmaz);
+ *  motora geçmişse GERÇEK emrin kendi durumu okunur (FILLED ⇒ stop tetiklendi ve doldu); diğer her durum olduğu gibi döner ve denetimde KAYIP sayılır (kapalı yönde). */
+export const ALGO_STATUS_AS_ORDER: Record<string, string> = { NEW: "NEW", TRIGGERING: "PENDING_NEW" };
+export type AlgoResponse = { algoId?: number; clientAlgoId?: string; algoStatus?: string; triggerPrice?: string; actualOrderId?: string | number; updateTime?: number; createTime?: number };
+export const algoAsOrder = (a: AlgoResponse, actualStatus: string | null = null): OrderResponse & { stopPrice?: string } => ({ ...a, orderId: a.algoId === undefined ? undefined : `${ALGO_ID_PREFIX}${a.algoId}`,
+  clientOrderId: a.clientAlgoId, status: actualStatus ?? ALGO_STATUS_AS_ORDER[String(a.algoStatus)] ?? String(a.algoStatus ?? "UNKNOWN"), stopPrice: a.triggerPrice, updateTime: a.updateTime ?? a.createTime });
+/** Futures'ta tetikli tür (STOP_MARKET/TAKE_PROFIT_MARKET) ⇒ Algo Order API. SPOT'ta hiçbir tür algo DEĞİLDİR. */
+const isAlgo = (i: OrderIntent): boolean => i.market === "FUTURES" && (FUTURES_STOP_TRIGGER_TYPES as readonly string[]).includes(i.type);
+/** Futures GİRİŞİNİN adlı retleri (ayrıntının başında; kod adı kendini anlatır). */
+export const FUTURES_ENTRY_REFUSALS = { shortNone: "futures-refused:short-mode-none", shortNotWritten: "futures-refused:short-execution-not-written", m2Null: "futures-refused:m2-futures-multiple-null",
+  leverageAbove: "futures-refused:symbol-leverage-above-cap", leverageUnread: "futures-refused:symbol-leverage-unreadable" } as const;
 /** Emir OLUŞTURMAYAN imzalı emir işlemleri (G12): sorgu ve iptal. Ağırlıklar Binance belgesinden; boğaz her yanıtta başlıkla hizalar (S-7). */
 export const ORDER_QUERY_WEIGHT = 4, ORDER_CANCEL_WEIGHT = 1;
 /** TÜRETİLMİŞ (uydurma değil): imza damgasının gönderim anına kadar yaşlanabileceği süre tavanı = `RECV_WINDOW_MS / 2`. Kalan yarı, borsaya varış gecikmesi ve
@@ -60,17 +88,17 @@ export type OrderType = (typeof ORDER_TYPES)[number];
 export type SendableType = (typeof SENDABLE_TYPES)[number];
 export type OrderClass = "ENTRY" | "EXIT" | "PROTECTION";
 export type OrderIntent = { source: string; symbol: string; market: "SPOT" | "FUTURES"; side: "BUY" | "SELL"; cls: OrderClass; type: OrderType; quantity: string; price?: string | null; stopPrice?: string | null; refPrice?: string | null; timeInForce?: string; seq: number; test?: boolean; positionId?: number | null };
-export type OrderRefusal = "ENTRY_CLOSED" | "TYPE_NOT_SENDABLE" | "MARKET_NOT_SUPPORTED" | "RULES_UNAVAILABLE" | "RULE_VIOLATION" | "BAD_SIGNAL" | "NO_KEY" | "CLOCK_UNSYNCED" | "TRIGGER_MISSING";
+export type OrderRefusal = "ENTRY_CLOSED" | "TYPE_NOT_SENDABLE" | "MARKET_NOT_SUPPORTED" | "RULES_UNAVAILABLE" | "RULE_VIOLATION" | "BAD_SIGNAL" | "NO_KEY" | "CLOCK_UNSYNCED" | "TRIGGER_MISSING" | "SHORT_CLOSED" | "EDGE_MULTIPLE_UNSET" | "LEVERAGE_ABOVE_CAP";
 /** Borsanın İŞ HATASI kodları: bunlar boğazın durma sebepleri değildir (statü var, `reason` yok) — K-8 gereği yine de olay yazılır (`ORDER_REJECTED`). */
 export const EXCHANGE_REJECT = /^http-4\d\d(:-?\d+)?$/;
-export type OrderResponse = { orderId?: number; clientOrderId?: string; status?: string; transactTime?: number; executedQty?: string; fills?: { price?: string; qty?: string; commission?: string; commissionAsset?: string }[] };
+export type OrderResponse = { orderId?: number | string; clientOrderId?: string; status?: string; transactTime?: number; updateTime?: number; avgPrice?: string; executedQty?: string; fills?: { price?: string; qty?: string; commission?: string; commissionAsset?: string }[] };
 export type OrderRefused = { ok: false; refusal: OrderRefusal; detail: string; clientOrderId: string | null; event: EmitResult | null; rules?: SymbolRules; adjusted?: Adjusted };
 export type OrderOutcome = OrderRefused
   | { ok: true; clientOrderId: string; test: boolean; rules: SymbolRules; adjusted: Extract<Adjusted, { ok: true }>; result: ExecuteOutcome<OrderResponse>; keyEvent: EmitResult | null; rejectEvent: EmitResult | null; keyMarked: boolean | null };
 export type KeySource = () => Promise<StoredKeyPair | null>;
 /** `observe`: TAŞIYICI anını (POST'un uçuş süresi) ölçen gözlemci. Depo/taşıyıcı ENJEKSİYONU DEĞİLDİR — hiçbir davranışı değiştirmez, yalnız okur (Ö-5: aleti de ölç).
  *  Tur 14'te ölçüldü: emrin reddi kodda değil AĞDA doğdu (POST taşıyıcıda 10 746,7 ms geçirdi); bu sayı görülmeden "mimari çalışıyor" denemez. */
-export type OrderDeps = ExecDeps & { key?: KeySource; ring?: Keyring; markSent?: (at: Date) => Promise<boolean>; observe?: (o: Observation) => void; entrySettings?: EntrySwitchStore };
+export type OrderDeps = ExecDeps & { key?: KeySource; ring?: Keyring; markSent?: (at: Date) => Promise<boolean>; observe?: (o: Observation) => void; entrySettings?: EntrySwitchStore; /** Tur 83: futures girişinin ayar deposu (kapı/kanarya) */ riskSettings?: SettingsStore };
 
 const NUM = /^\d+(\.\d+)?$/;
 /** Borsanın "anahtar geçersiz" kodları (Binance belgesi): -2014 API-key format invalid · -2015 invalid API-key/IP/permissions. Sicil: KEY_INVALID (kaynak G11). */
@@ -78,13 +106,33 @@ const KEY_INVALID_CODES = ["-2014", "-2015"];
 
 /** İmzalanacak sorgu: kimlik (`newClientOrderId`) İÇERİDE. Anahtar sırası imzayla birebir aynı kalır — sarmalayıcı aynı değeri yeniden yazsa da dize değişmez.
  *  `timestamp` YEREL SAATTEN GELMEZ: sunucu saatine hizalanmış damga dışarıdan verilir (src/lib/binance/time.ts, Tur 13) — kapı yerel saatten damga üretimini KIRMIZI sayar. */
-function orderQuery(i: OrderIntent, a: Extract<Adjusted, { ok: true }>, clientOrderId: string, timestamp: string): Record<string, string> {
+function orderQuery(i: OrderIntent, a: Extract<Adjusted, { ok: true }>, clientOrderId: string, timestamp: string, fut = false): Record<string, string> {
+  if (fut && isAlgo(i)) return { algoType: FUTURES_ALGO_TYPE, symbol: i.symbol, side: i.side, type: i.type, quantity: a.quantity, triggerPrice: a.stopPrice as string, reduceOnly: "true", clientAlgoId: clientOrderId, recvWindow: String(RECV_WINDOW_MS), timestamp }; // Tur 86: koşullu futures emri (tetik borsada, K-1)
   const q: Record<string, string> = { symbol: i.symbol, side: i.side, type: i.type, quantity: a.quantity };
   if (a.price !== null) { q.price = a.price; q.timeInForce = i.timeInForce ?? TIME_IN_FORCE_DEFAULT; }
   if (a.stopPrice !== null) q.stopPrice = a.stopPrice; // K-1: tetik borsada durur; değeri G12 planından gelir, bu modül tetik fiyatı ÜRETMEZ (A-1: stop mesafesi açık)
+  if (fut && i.cls !== "ENTRY") q.reduceOnly = "true"; // Tur 83: futures çıkış/koruma pozisyonu YALNIZ küçültür — ters yönde yeni pozisyon açamaz (K-2)
   q.newClientOrderId = clientOrderId;
-  q.newOrderRespType = RESPONSE_TYPE; q.recvWindow = String(RECV_WINDOW_MS); q.timestamp = timestamp;
+  q.newOrderRespType = fut ? FUTURES_RESPONSE_TYPE : RESPONSE_TYPE; q.recvWindow = String(RECV_WINDOW_MS); q.timestamp = timestamp;
   return q;
+}
+
+/** FUTURES GİRİŞİNİN ÖN KAPISI (Tur 83 · K-11, M-2, Üretim S12-5). Sıra: ayar okunur (TEK okuma yolu; okunamaz ⇒ kapalı arıza) → tavan/şalter hükmü → SATIŞ yönlü giriş = açığa satış: kip
+ *  kapalıysa (`CLOSED_SHORT_MODE`) ret; kip açık ama icrası yazılmadı (G22) ⇒ yine ret → M-2 futures çarpanı NULL ⇒ ret (kenar ölçülemez) → hesaptaki sembol kaldıracı tavanı AŞIYORSA ya da
+ *  okunamıyorsa ret (K-11: kaldıraç tavanı aşamaz). Hepsi borsaya EMİR gönderilmeden. Dönüş null ⇒ giriş kapısı geçildi. */
+type EntryGateRefusal = { refusal: OrderRefusal; detail: string };
+async function futuresEntryGate(i: OrderIntent, deps: OrderDeps): Promise<EntryGateRefusal | null> {
+  const r = await readRiskRuntime({ store: deps.riskSettings, events: deps.events });
+  if (!r.ok) return { refusal: "MARKET_NOT_SUPPORTED", detail: `market=FUTURES; ${FUTURES_REFUSALS.unreadable}: ${r.refusal}: ${r.detail}` };
+  const f = r.runtime.futures;
+  if (!f.allowed) return { refusal: "MARKET_NOT_SUPPORTED", detail: `market=FUTURES; ${f.refusal}: ${f.detail}` };
+  if (i.side === "SELL") return { refusal: "SHORT_CLOSED", detail: r.runtime.shortMode === CLOSED_SHORT_MODE ? `${FUTURES_ENTRY_REFUSALS.shortNone}: açığa satış kapalı (ayar); satış yönlü futures girişi yapılmaz`
+    : `${FUTURES_ENTRY_REFUSALS.shortNotWritten}: kip ${r.runtime.shortMode} seçili ama açığa satış icrası yazılmadı (G22); satış yönlü futures girişi yapılmaz` };
+  if (f.m2FuturesMultiple === null) return { refusal: "EDGE_MULTIPLE_UNSET", detail: `${FUTURES_ENTRY_REFUSALS.m2Null}: M-2 futures çarpanı ayarlanmadı; futures kenarı ölçülemez, giriş yok` };
+  const l = await readSymbolLeverage(i.symbol, { exchange: deps.exchange, key: deps.key, ring: deps.ring, now: deps.now });
+  if (!l.ok) return { refusal: "LEVERAGE_ABOVE_CAP", detail: `${FUTURES_ENTRY_REFUSALS.leverageUnread}: ${l.detail}; hesaptaki kaldıraç doğrulanamadan giriş yapılmaz (K-11)` };
+  if (l.leverage > f.leverageCap) return { refusal: "LEVERAGE_ABOVE_CAP", detail: `${FUTURES_ENTRY_REFUSALS.leverageAbove}: hesaptaki ${i.symbol} kaldıracı ${l.leverage}× > tavan ${f.leverageCap}× (K-11)` };
+  return null;
 }
 
 /** Emri kur ve G10 sarmalayıcısıyla gönder. Hiçbir dal fırlatmaz; gönderilmeyen her emir sebepli sonuç + olaydır (K-8). */
@@ -94,19 +142,24 @@ export async function placeOrder(i: OrderIntent, deps: OrderDeps = {}): Promise<
     ({ ok: false, refusal, detail, clientOrderId: null, event: await stopEngine(code, `${i.cls} ${i.symbol} ${i.type} · ${detail}`, { positionId: i.positionId ?? null }, deps.events), ...extra });
   // FUTURES ÖN KAPISI (Tur 36, G21 kalemleri b/g): karar artık kodda değil AYARDA (risk_settings). Ayar YALNIZ bu dalda okunur — SPOT emirlerine (giriş, çıkış, KORUMA)
   // tek bir ek okuma bile eklenmez (M-1/K-1/K-2: çıkış ve koruma hiçbir ayara bağlanamaz). Ayar izin verse bile emir ÇIKMAZ: futures EMİR YOLU yazılmadı (kalem f, A-5).
-  if (i.market !== "SPOT") { const f = await screenFutures({ events: deps.events });
-    return no("MARKET_NOT_SUPPORTED", "ORDER_RULE_VIOLATION", `market=${i.market}; ` + (f.allowed ? `ayar futures'a izin veriyor (tavan ${f.leverageCap}×) ama futures EMİR YOLU YAZILMADI (G21 kalemi f, A-5)` : `${f.refusal}: ${f.detail}`)); }
-  if (!(SENDABLE_TYPES as readonly string[]).includes(i.type)) return no("TYPE_NOT_SENDABLE", "ORDER_RULE_VIOLATION", `tür=${i.type} bu turda gönderilmez (koruma emri yerleştirme G12, K-1/K-2)`);
+  // TUR 83: emir yolu futures'ı TAŞIR (Tur 36'nın "yazılmadı" hâli kalktı); ön kapı artık YALNIZ futures GİRİŞİNDE ayarı ve sembol kaldıracını okur (futuresEntryGate) — çıkış/koruma okumaz.
+  const fut = i.market === "FUTURES";
+  if (i.market !== "SPOT" && !fut) return no("MARKET_NOT_SUPPORTED", "ORDER_RULE_VIOLATION", `market=${String(i.market)} tanınmıyor`);
+  if (fut && i.cls === "ENTRY") { const g = await futuresEntryGate(i, deps); if (g) return no(g.refusal, "ORDER_RULE_VIOLATION", g.detail); }
+  if (!fut && !(SENDABLE_TYPES as readonly string[]).includes(i.type)) return no("TYPE_NOT_SENDABLE", "ORDER_RULE_VIOLATION", `tür=${i.type} bu turda gönderilmez (koruma emri yerleştirme G12, K-1/K-2)`);
+  if (fut && !(FUTURES_SENDABLE_TYPES as readonly string[]).includes(i.type)) return no("TYPE_NOT_SENDABLE", "ORDER_RULE_VIOLATION", `tür=${i.type} futures'ta gönderilmez (USDS-M türleri: ${FUTURES_SENDABLE_TYPES.join(", ")})`);
+  const algo = isAlgo(i); // TUR 86: futures koşullu emri Algo Order API'ye gider; doğrulama ucu yok ⇒ test kipinde gönderilmez
+  if (algo && test) return no("TYPE_NOT_SENDABLE", "ORDER_RULE_VIOLATION", `tür=${i.type} futures'ta koşullu emirdir (${FUTURES_ALGO_PATH}); Binance'in bu uç için doğrulama (test) ucu yok — test kipinde gönderilmez`);
   // GİRİŞ ŞALTERİ (Tur 64): karar AYARDAN okunur, koddan değil. Okuma YALNIZ bu dalda yapılır — çıkışa, korumaya ve iptale tek bir ek okuma bile eklenmez (M-1/K-1/K-2).
   if (i.cls === "ENTRY") { const e = await entrySwitch({ store: deps.entrySettings });
     if (!e.allowed) return no("ENTRY_CLOSED", "ENTRY_CLOSED", `${e.refusal}: ${e.detail}`); }
-  if ((STOP_TRIGGER_TYPES as readonly string[]).includes(i.type) && (typeof i.stopPrice !== "string" || i.stopPrice.length === 0)) return no("TRIGGER_MISSING", "ORDER_RULE_VIOLATION", `tür=${i.type} tetik fiyatı (stopPrice) olmadan gönderilemez: tetiksiz koruma borsada durmaz (K-1)`);
-  const r = await readSymbolRules(i.symbol, { exchange: deps.exchange, now });
+  if (([...STOP_TRIGGER_TYPES, ...FUTURES_STOP_TRIGGER_TYPES] as readonly string[]).includes(i.type) && (typeof i.stopPrice !== "string" || i.stopPrice.length === 0)) return no("TRIGGER_MISSING", "ORDER_RULE_VIOLATION", `tür=${i.type} tetik fiyatı (stopPrice) olmadan gönderilemez: tetiksiz koruma borsada durmaz (K-1)`);
+  const r = await (fut ? readFuturesSymbolRules : readSymbolRules)(i.symbol, { exchange: deps.exchange, now });
   if (!r.ok) return no("RULES_UNAVAILABLE", "ORDER_RULES_UNAVAILABLE", `${i.symbol} kuralları okunamadı: ${r.detail}; emir gönderilmedi`);
   // PERCENT_PRICE_BY_SIDE referansı (Tur 13): sembolde o filtre VARSA ve emir fiyatlıysa ortalama fiyat ÇALIŞMA ANINDA okunur; okunamazsa emir gönderilmez (kapalı arıza).
   let avgPrice: string | null = null;
   if (r.rules.percent && (i.type === "LIMIT" || typeof i.stopPrice === "string")) {
-    const ap = await readAvgPrice(i.symbol, { exchange: deps.exchange, now });
+    const ap = await (fut ? readMarkPrice : readAvgPrice)(i.symbol, { exchange: deps.exchange, now });
     if (!ap.ok) return no("RULES_UNAVAILABLE", "ORDER_RULES_UNAVAILABLE", `${i.symbol} ortalama fiyatı okunamadı: ${ap.detail}; PERCENT_PRICE_BY_SIDE denetlenemez, emir gönderilmedi`, { rules: r.rules });
     avgPrice = ap.price;
   }
@@ -116,7 +169,7 @@ export async function placeOrder(i: OrderIntent, deps: OrderDeps = {}): Promise<
   let clientOrderId: string; try { clientOrderId = deriveClientOrderId(signal); } catch (e) { return no("BAD_SIGNAL", "ORDER_RULE_VIOLATION", `sinyal kanonik değil: ${(e as Error).message}`); }
   const k = await (deps.key ?? prismaKeySource)();
   if (!k) return { ok: false, refusal: "NO_KEY", detail: "geçerli borsa anahtarı yok; emir gönderilmedi", clientOrderId, rules: r.rules, adjusted: a, event: await stopEngine("KEY_INVALID", `${i.cls} ${i.symbol} · kayıtlı geçerli anahtar yok`, {}, deps.events) };
-  const toRow = (d: OrderResponse): OrderRow => ({ exchangeOrderId: test ? `TEST:${clientOrderId}` : String(d.orderId ?? `?:${clientOrderId}`), symbol: i.symbol, market: i.market, type: i.type, side: i.side, quantity: a.quantity, price: a.price, status: test ? "TEST" : String(d.status ?? "UNKNOWN"), placedAt: new Date(d.transactTime ?? now()), rawResponse: d, positionId: i.positionId ?? null });
+  const toRow = (d: OrderResponse): OrderRow => ({ exchangeOrderId: test ? `TEST:${clientOrderId}` : String(d.orderId ?? `?:${clientOrderId}`), symbol: i.symbol, market: i.market, type: i.type, side: i.side, quantity: a.quantity, price: a.price, status: test ? "TEST" : String(d.status ?? "UNKNOWN"), placedAt: new Date(d.transactTime ?? d.updateTime ?? now()), rawResponse: d, positionId: i.positionId ?? null });
   const toFill = (d: OrderResponse) => ({ status: test ? "TEST" : String(d.status ?? "UNKNOWN"), fees: (d.fills ?? []).filter((f) => typeof f.commissionAsset === "string" && typeof f.commission === "string" && NUM.test(f.commission)).map((f) => ({ asset: f.commissionAsset as string, amount: f.commission as string })) });
   // GÖNDERİM YÜZEYİ (Tur 14): imza ve damga BURADA, sarmalayıcının izin/kilit/kayıt/bütçe adımlarından SONRA, gönderimden hemen önce üretilir (bkz. execute.ts `Dispatch`).
   // Damga ile taşıyıcı arasında boğazın kendi depo turları kalır; onların da damgayı yaşlandırmasına karşı `guard` son anda yaşı ölçer ve aşılmışsa çağrıyı ÇIKARTMAZ.
@@ -125,13 +178,20 @@ export async function placeOrder(i: OrderIntent, deps: OrderDeps = {}): Promise<
     if (!ts.ok) return { ok: false, refusal: "CLOCK_UNSYNCED", detail: `${ts.refusal}: ${ts.detail}; emir gönderilmedi`, event: ts.event };
     const mintedAt = now();
     const guard = (): { ok: true } | { ok: false; detail: string } => { const age = now() - mintedAt; return age <= STAMP_MAX_AGE_MS ? { ok: true } : { ok: false, detail: `stamp-stale:${age}ms>${STAMP_MAX_AGE_MS}ms` }; };
-    const sent = await withSignedCall(k.api, k.priv, orderQuery(i, a, clientOrderId, ts.timestamp),
+    const sent = await withSignedCall(k.api, k.priv, orderQuery(i, a, clientOrderId, ts.timestamp, fut),
       async (headers, query) => ({ ok: true as const, ...(await requestWithEvents<OrderResponse>({ ...call, headers, query, guard, observe: deps.observe }, deps.exchange)) }), deps.ring);
+    if (algo && sent.result.ok) sent.result.data = algoAsOrder(sent.result.data as AlgoResponse); // TUR 86: kimlik ALGO:<algoId>, durum emir dilinde, tetik stopPrice'ta (ham alanlar korunur)
+    // TUR 83 (M-1): futures dolumunun komisyonu emrin işlemlerinden okunur ve SPOT'un `fills` biçimine konur ⇒ mutabakat aynı yoldan. Okunamazsa olay yazılır; komisyon "0" sayılmaz.
+    if (fut && !test && sent.result.ok && sent.result.data.orderId !== undefined && Number(sent.result.data.executedQty ?? "0") > 0) {
+      const fl = await readOrderFills(i.symbol, sent.result.data.orderId, { exchange: deps.exchange, key: deps.key, ring: deps.ring, now });
+      if (fl.ok) sent.result.data.fills = fl.fills;
+      else await stopEngine("FEE_LEDGER_UNAVAILABLE", `${i.cls} ${i.symbol} · kimlik ${clientOrderId} · futures dolumunun komisyonu okunamadı (${fl.detail}); defter eksik kalabilir`, { positionId: i.positionId ?? null }, deps.events);
+    }
     if (!sent.result.ok && !sent.result.reason && /^stamp-stale:/.test(sent.result.detail))
       return { ok: false, refusal: "STAMP_STALE", detail: sent.result.detail, event: await stopEngine("STAMP_STALE", `${i.cls} ${i.symbol} · kimlik ${clientOrderId} · ${sent.result.detail}; kilit ve rezervasyon bırakıldı`, { positionId: i.positionId ?? null }, deps.events) };
     return sent;
   };
-  const result = await executeSignal<OrderResponse>({ signal, call: { path: test ? ORDER_PATHS.test : ORDER_PATHS.live, method: "POST", cls: i.cls, weight: ORDER_WEIGHT, orders: ORDER_COUNT }, notional: test ? "0" : a.notional, toRow, toFill, dispatch, records: !test }, deps);
+  const result = await executeSignal<OrderResponse>({ signal, call: { path: fut ? (algo ? FUTURES_ALGO_PATH : test ? FUTURES_ORDER_PATHS.test : FUTURES_ORDER_PATHS.live) : test ? ORDER_PATHS.test : ORDER_PATHS.live, method: "POST", cls: i.cls, weight: ORDER_WEIGHT, orders: ORDER_COUNT }, notional: test ? "0" : a.notional, toRow, toFill, dispatch, records: !test }, deps);
   const denied = !result.executed && result.reason === "EXCHANGE_DENIED" ? result.result : null;
   const keyInvalid = !!denied && !denied.ok && KEY_INVALID_CODES.some((c) => denied.detail.endsWith(`:${c}`));
   const keyEvent = keyInvalid && denied && !denied.ok
@@ -192,7 +252,8 @@ export async function buyFeeAsset(base: string, quote: string, source: string, s
 //   M-1 "çıkış ve koruma hiçbir zaman bütçeye takılmaz" ve K-1/K-2 gereği koruma denetimi ile korumasız pozisyonun temizliği bir kilidi beklemek zorunda değildir.
 // Yine de ZORUNLU olanlar: G05 boğazı (S-7 sayaç + askı), G07 olay sarmalayıcısı (K-8), G06 imzası (S-4) ve Tur 13 saat hizalaması. Kapı bu iki fonksiyonun dışında
 // boğaz çağrısını KIRMIZI sayar; sınıfları PROTECTION/EXIT sabittir (ENTRY olamaz).
-export type OrderRef = { symbol: string; orderId?: number | string | null; clientOrderId?: string | null };
+/** Tur 83: `market` FUTURES ise sorgu/iptal futures emir ucuna gider (aynı boğaz, aynı imza); verilmezse SPOT. */
+export type OrderRef = { symbol: string; orderId?: number | string | null; clientOrderId?: string | null; market?: "SPOT" | "FUTURES" };
 export type OrderOpRefusal = "BAD_REF" | "NO_KEY" | "CLOCK_UNSYNCED" | "EXCHANGE_DENIED";
 export type OrderOpOutcome = { ok: true; data: OrderResponse; event: EmitResult | null } | { ok: false; refusal: OrderOpRefusal; detail: string; status?: number; event: EmitResult | null };
 
@@ -204,12 +265,20 @@ async function signedOrderOp(label: string, method: "GET" | "DELETE", cls: Extra
   if (!k) return { ok: false, refusal: "NO_KEY", detail: `${label}: geçerli borsa anahtarı yok`, event: await stopEngine("KEY_INVALID", `${cls} ${ref.symbol} · ${label} · kayıtlı geçerli anahtar yok`, {}, deps.events) };
   const ts = await signedTimestamp({ exchange: deps.exchange, events: deps.events, now });
   if (!ts.ok) return { ok: false, refusal: "CLOCK_UNSYNCED", detail: `${label}: ${ts.refusal}: ${ts.detail}`, event: ts.event };
-  const q: Record<string, string> = { symbol: ref.symbol };
-  if (id !== null) q.orderId = id; else q.origClientOrderId = ref.clientOrderId as string;
-  q.recvWindow = String(RECV_WINDOW_MS); q.timestamp = ts.timestamp;
-  const r = await withSignedCall(k.api, k.priv, q, (headers, query) => requestWithEvents<OrderResponse>({ path: ORDER_PATHS.live, method, cls, weight, headers, query }, deps.exchange), deps.ring);
+  // TUR 86 (G21 kutu 6): futures koruması algo emridir — kimlik `ALGO:<algoId>` ⇒ sorgu/iptal algo ucuna `algoId` ile; algo emri motora geçmişse (actualOrderId) GERÇEK emrin durumu AYNI imzalı
+  //   yoldan okunur (FILLED ⇒ stop tetiklendi). Önek yoksa yol eskisiyle AYNI (SPOT `/api/v3/order`, futures `/fapi/v1/order`).
+  const algoId = ref.market === "FUTURES" && id !== null && id.startsWith(ALGO_ID_PREFIX) ? id.slice(ALGO_ID_PREFIX.length) : null;
+  const send = (path: string, q: Record<string, string>, m: "GET" | "DELETE" = method) => withSignedCall(k.api, k.priv, { ...q, recvWindow: String(RECV_WINDOW_MS), timestamp: ts.timestamp }, (headers, query) => requestWithEvents<OrderResponse>({ path, method: m, cls, weight, headers, query }, deps.exchange), deps.ring);
+  const q: Record<string, string> = algoId !== null ? { algoId } : { symbol: ref.symbol };
+  if (algoId === null) { if (id !== null) q.orderId = id; else q.origClientOrderId = ref.clientOrderId as string; }
+  const r = await send(algoId !== null ? FUTURES_ALGO_PATH : ref.market === "FUTURES" ? FUTURES_ORDER_PATHS.live : ORDER_PATHS.live, q);
   if (!r.result.ok) return { ok: false, refusal: "EXCHANGE_DENIED", detail: `${label}: ${r.result.reason ?? ""}:${r.result.detail}`, status: r.result.status, event: r.event };
-  return { ok: true, data: r.result.data, event: r.event };
+  if (algoId === null) return { ok: true, data: r.result.data, event: r.event };
+  const a = r.result.data as AlgoResponse, actual = method === "GET" && a.actualOrderId !== undefined && String(a.actualOrderId) !== "" ? String(a.actualOrderId) : null;
+  if (actual === null) return { ok: true, data: algoAsOrder(a), event: r.event };
+  const o = await send(FUTURES_ORDER_PATHS.live, { symbol: ref.symbol, orderId: actual }, "GET");
+  if (!o.result.ok) return { ok: false, refusal: "EXCHANGE_DENIED", detail: `${label}: algo ${algoId} motora geçti (emir ${actual}) ama emir okunamadı: ${o.result.reason ?? ""}:${o.result.detail}`, status: o.result.status, event: o.event };
+  return { ok: true, data: algoAsOrder(a, String(o.result.data.status ?? "UNKNOWN")), event: o.event };
 }
 /** Borsadaki emrin GÜNCEL durumu (K-1 denetimi). Sınıf PROTECTION: bütçeye takılmaz (M-1), boğazda en yüksek payı alır. */
 export const readOrder = (ref: OrderRef, deps: OrderDeps = {}): Promise<OrderOpOutcome> => signedOrderOp("emir sorgusu", "GET", "PROTECTION", ORDER_QUERY_WEIGHT, ref, deps);

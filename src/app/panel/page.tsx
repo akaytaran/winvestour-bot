@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { PanelView, Card, Level, PositionView } from "@/lib/panel";
 import { DurdurFormu } from "./DurdurFormu";
+import { BilgiModali } from "./BilgiModali";
 import { enroll, lockGate, platformAvailable, unlock, type LockRead, type LockState } from "@/lib/lock/client";
 import { dict, fill } from "@/lib/i18n";
 import { fmt } from "@/lib/i18n/format";
@@ -78,13 +79,24 @@ function riskSatirlari(r: RiskView): string[] {
     (r.changes ?? []).length === 0 ? T.risk.neverChanged : fill(T.risk.lastChange, { line: defterCumlesi((r.changes as Defter[])[0]) }),
   ];
 }
-/** RİSK AYARININ SADE ÖZETİ (ana görünüm): yalnız yapılandırılmış alanlardan; uçtan gelen cümleler teknik ayrıntıdadır. */
-function riskOzeti(r: RiskView): string[] {
-  const s = r.settings; if (!s) return [];
-  return [s.leverageCap === null ? T.risk.leverageUnset : fill(T.risk.leverageSet, { value: s.leverageCap }), s.futuresEnabled ? T.risk.futuresOn : T.risk.futuresOff,
-    `${fill(T.risk.mode, { label: kipAdi(s.shortMode) })} ${kipAnlami(s.shortMode)} ${T.risk.modeTodaySee}`.trim(),
-    s.m2FuturesMultiple === null ? T.risk.m2Unset : fill(T.risk.m2Set, { value: s.m2FuturesMultiple }),
-    fill(T.risk.futuresPath, { state: r.futures?.allowed ? T.risk.futuresPathOpen : T.risk.futuresPathClosed })];
+/** RİSK AYARININ SADE ÖZETİ (ana görünüm): yalnız yapılandırılmış alanlardan; uçtan gelen cümleler teknik ayrıntıdadır.
+ *  TUR 83 (G21 · iş sahibi kararları D1/D3, KARAR-DEFTERI 2 Eki): kaldıraç tavanı ve short yönü sayfada KISA satırdır (ad · değer · boşsa "ayarlanmadı — futures kapalı"); uzun açıklama
+ *  yanındaki bilgi (i) düğmesinin açtığı modaldadır (./BilgiModali). Önerilen/örnek sayı YOK. Öteki satırların taşınması G37 turunda. */
+function RiskOzeti({ r }: { r: RiskView }) {
+  const s = r.settings; if (!s) return null;
+  const P: React.CSSProperties = { margin: ".3rem 0", lineHeight: 1.55 }, satir: React.CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: ".6rem" };
+  const ac = (name: string) => fill(T.info.open, { name });
+  return (<>
+    <div style={satir} data-ayar-satiri="leverageCap"><p id="risk-tavan-satiri" style={P}>{`${T.risk.fields.leverageCap}: ${s.leverageCap === null ? T.risk.capUnsetShort : `${s.leverageCap}×`}`}</p>
+      <BilgiModali kimlik="leverageCap" metin={{ baslik: T.risk.fields.leverageCap, acEtiketi: ac(T.risk.fields.leverageCap), kapatEtiketi: T.info.close,
+        satirlar: [s.leverageCap === null ? T.risk.leverageUnset : fill(T.risk.leverageSet, { value: s.leverageCap }), T.info.leverageWhat, T.info.leverageEmpty, T.info.leverageExchange, T.info.leverageChange] }} /></div>
+    <p style={P}>{s.futuresEnabled ? T.risk.futuresOn : T.risk.futuresOff}</p>
+    <div style={satir} data-ayar-satiri="shortMode"><p id="risk-short-satiri" style={P}>{`${T.risk.fields.shortMode}: ${kipAdi(s.shortMode)}`}</p>
+      <BilgiModali kimlik="shortMode" metin={{ baslik: T.risk.fields.shortMode, acEtiketi: ac(T.risk.fields.shortMode), kapatEtiketi: T.info.close,
+        satirlar: [`${fill(T.risk.mode, { label: kipAdi(s.shortMode) })} ${kipAnlami(s.shortMode)} ${T.risk.modeTodaySee}`.trim(), T.info.shortWhat, T.info.shortDefault, T.info.shortChange] }} /></div>
+    <p style={P}>{s.m2FuturesMultiple === null ? T.risk.m2Unset : fill(T.risk.m2Set, { value: s.m2FuturesMultiple })}</p>
+    <p style={P}>{fill(T.risk.futuresPath, { state: r.futures?.allowed ? T.risk.futuresPathOpen : T.risk.futuresPathClosed })}</p>
+  </>);
 }
 
 // Kenar/etiket renkleri koyu zeminde OKUNABİLİR seçildi (denetçi gözü, Tur 26 madde 7): ilk seçim küçük punto için ≈ 2,7:1 kontrast veriyordu; bunlar ≥ 7:1.
@@ -1000,7 +1012,7 @@ export default function Panel() {
           <p data-ne-yapar style={NE}>{T.risk.what}</p>
           <section style={box(risk?.ok ? (risk?.futures?.allowed ? "WARN" : "INFO") : "WARN")} aria-label={T.risk.heading}>
             {!risk?.ok ? <p style={{ lineHeight: 1.55 }}>{T.risk.unreadable}</p> : <>
-              {riskOzeti(risk).map((l, i) => <p key={i} style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{l}</p>)}
+              <RiskOzeti r={risk} />
               <details style={{ marginTop: ".6rem" }}>
                 <summary style={{ cursor: "pointer", minHeight: DOKUN, display: "flex", alignItems: "center" }}>{T.risk.change}</summary>
                 <p style={{ margin: ".4rem 0", lineHeight: 1.55, color: "#9a9aa2" }}>{T.risk.changeHelp}</p>

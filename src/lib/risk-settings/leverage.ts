@@ -8,7 +8,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { prismaKeyFutures } from "@/lib/exchange-key";
 import type { ExchangeDeps } from "@/lib/events/exchange";
 import { LEVERAGE_ACCEPTED_PENDING, LEVERAGE_REQUESTER, recordLeverageRequest, settleLeverageRequest } from "@/lib/events";
-import { closedFuturesDriver, FUTURES_DRIVER_UNAVAILABLE, LEVERAGE_OUTCOME_UNKNOWN, type DriverResult, type DriverUnknown, type FuturesDriver } from "@/lib/orders/futures-driver";
+import { closedFuturesDriver, DRIVER_REFUSALS, FUTURES_DRIVER_UNAVAILABLE, LEVERAGE_OUTCOME_UNKNOWN, type DriverApplied, type DriverRefused, type DriverResult, type DriverUnknown, type FuturesDriver } from "@/lib/orders/futures-driver";
 import { checkK6Window, K6_CANARY_MAX_AGE_MS, K6_CANARY_SCRIPT, K6_WINDOW_REFUSAL, type K6Deps } from "@/lib/orders/k6-canary-window";
 import { readFunding } from "@/lib/edge/funding-reader";
 import { futuresRefusalText, readRiskRuntime, type FuturesRefusal, type SettingsDeps } from "./index";
@@ -19,7 +19,11 @@ import { srvFor, RECORD_LANG } from "@/lib/i18n/srv";
 
 const D = Prisma.Decimal, MS_PER_HOUR = 3_600_000; // birim dönüşümü, eşik değil
 export const LEVERAGE_REFUSALS = { invalid: "leverage-refused:invalid-request", aboveCap: "leverage-refused:above-cap", keyNoFutures: "leverage-refused:key-futures-disabled",
-  loadUnmeasured: "leverage-refused:load-unmeasured", unrecorded: "leverage-refused:unrecorded", driverUnavailable: FUTURES_DRIVER_UNAVAILABLE, k6Window: K6_WINDOW_REFUSAL } as const;
+  loadUnmeasured: "leverage-refused:load-unmeasured", unrecorded: "leverage-refused:unrecorded", driverUnavailable: FUTURES_DRIVER_UNAVAILABLE, k6Window: K6_WINDOW_REFUSAL,
+  // Tur 83 (G21-f ikinci dilim): imzalı sürücünün iki adlı reddi — ikisinde de kaldıraç borsada DEĞİŞMEDİ.
+  aboveBracket: DRIVER_REFUSALS[0], exchangeUnavailable: DRIVER_REFUSALS[1] } as const;
+/** TUR 83: borsa kaldıracı DOĞRULADI — satırın kapanış kodu (sürücünün "oldu" hâli). */
+export const LEVERAGE_APPLIED = "leverage-applied" as const;
 /** TUR 49 (G21-f) beklemede kodu — Tur 50'de sayım için src/lib/events'e taşındı (değer aynı); buradan da dışa aktarılır. */
 export { LEVERAGE_ACCEPTED_PENDING, LEVERAGE_REQUESTER };
 export type LeverageRefusal = (typeof LEVERAGE_REFUSALS)[keyof typeof LEVERAGE_REFUSALS] | FuturesRefusal;
@@ -38,7 +42,8 @@ export const unmeasuredFuturesCommission = async (): Promise<CommissionReading> 
 
 /** Ret kodunun insan cümlesi (sözlük `leverage.text`); kod → anahtar eşlemesi burada, cümle sözlükte. Yeni ret kodu eklenirse derleyici eşlemeyi zorlar. */
 const TEXT_KEY = { "leverage-refused:invalid-request": "invalid", "leverage-refused:above-cap": "aboveCap", "leverage-refused:key-futures-disabled": "keyNoFutures", "leverage-refused:load-unmeasured": "loadUnmeasured",
-  "leverage-refused:unrecorded": "unrecorded", "leverage-refused:k6-canary-outside-window": "k6Window", "futures-driver-unavailable": "driverUnavailable" } as const satisfies Record<Exclude<LeverageRefusal, FuturesRefusal>, string>;
+  "leverage-refused:unrecorded": "unrecorded", "leverage-refused:k6-canary-outside-window": "k6Window", "futures-driver-unavailable": "driverUnavailable",
+  "leverage-refused:above-exchange-bracket": "aboveBracket", "leverage-refused:exchange-unavailable": "exchangeUnavailable" } as const satisfies Record<Exclude<LeverageRefusal, FuturesRefusal>, string>;
 const textOf = (refusal: Exclude<LeverageRefusal, FuturesRefusal>, lang: string): string => fill(srvFor(lang).leverage.text[TEXT_KEY[refusal]], { hours: K6_CANARY_MAX_AGE_MS / MS_PER_HOUR });
 const SYMBOL_RE = /^[A-Z0-9]{2,20}$/;
 
@@ -99,18 +104,24 @@ export async function leverageResponse(req: Request, deps: LeverageDeps = {}): P
   if (!rec.ok) return unrecorded(fill(R.notWritten, { code: rec.code, result: o.ok ? LEVERAGE_ACCEPTED_PENDING : o.refusal }));
   if (!o.ok) return Response.json({ ...o, recorded: true }, { status: statusOf(o.refusal) });
   // ÇAĞRI SONRA: sürücü yalnız DEFTERE YAZILMIŞ kaydın kimliğiyle çağrılabilir (markalı tip). Sonucu AYNI satıra yazılır; yazılamazsa sonuç bildirilmez.
-  // TUR 50 (S49-2) UZLAŞTIRMA: satırın kapanışı sürücünün KENDİ dönüşünden türer — olmadı (kendi kodu) · BİLMİYORUM (fırlattı / açıkça bilmiyorum / tanınmayan biçim). "Oldu" bugün tipte yok.
+  // TUR 50 (S49-2) UZLAŞTIRMA: satırın kapanışı sürücünün KENDİ dönüşünden türer — olmadı (kendi kodu) · BİLMİYORUM (fırlattı / açıkça bilmiyorum / tanınmayan biçim) · TUR 83: OLDU (borsa doğruladı;
+  //   yalnız imzalı sürücü döner, üretimin varsayılan sürücüsü KAPALI kalır — testnet ölçümünden sonra bağlanır).
   let d: DriverResult;
   try { d = classify(await (deps.driver ?? closedFuturesDriver).setLeverage({ recordId: rec.id, symbol: o.requested.symbol, leverage: o.requested.leverage }), lang); }
   catch (e) { d = unknownOf(fill(R.driverThrew, { name: (e as Error)?.name ?? "error" })); }
-  const s = await settleLeverageRequest(rec.id, LEVERAGE_ACCEPTED_PENDING, d.refusal, deps.events);
-  if (!s.ok) return unrecorded(fill(R.notSettled, { refusal: d.refusal, id: rec.id, code: s.code }));
+  const closeCode = d.ok ? LEVERAGE_APPLIED : d.refusal;
+  const s = await settleLeverageRequest(rec.id, LEVERAGE_ACCEPTED_PENDING, closeCode, deps.events);
+  if (!s.ok) return unrecorded(fill(R.notSettled, { refusal: closeCode, id: rec.id, code: s.code }));
+  if (d.ok) return Response.json({ ok: true, applied: true, outcome: LEVERAGE_APPLIED, leverage: d.leverage, exchangeMax: d.exchangeMax, text: fill(srvFor(lang).leverage.appliedText, { lev: d.leverage, symbol: o.requested.symbol, max: d.exchangeMax }), detail: d.detail, requested: o.requested, cap: o.cap, load: o.load, exchangeCalls: o.exchangeCalls + d.exchangeCalls, recorded: true }, { status: 200 });
   if ("unknown" in d) return Response.json({ ok: false, applied: null, outcome: "unknown", refusal: d.refusal, text: srvFor(lang).leverage.unknownText, detail: d.detail, requested: o.requested, cap: o.cap, load: o.load, exchangeCalls: o.exchangeCalls + d.exchangeCalls, recorded: true }, { status: 502 });
   return Response.json({ ok: false, applied: false, refusal: d.refusal, text: textOf(d.refusal, lang), detail: d.detail, requested: o.requested, cap: o.cap, load: o.load, exchangeCalls: o.exchangeCalls + d.exchangeCalls, recorded: true } satisfies LeverageOutcome & { recorded: true }, { status: 409 });
 }
-/** Sürücünün dönüşü yalnız TANINAN ret biçimindeyse "olmadı"dır; başka her biçim (ok:true dâhil — bugün "oldu" hâli yok) BİLMİYORUM sayılır: yazılım uygulanmış olabilecek kaldıracı "olmadı" diye kapatmaz. */
+/** Sürücünün dönüşü yalnız TANINAN ret biçimindeyse "olmadı"dır; "oldu" yalnız TANINAN uygulandı biçimiyle (Tur 83: ok:true + applied:true + tamsayı kaldıraç); başka her biçim BİLMİYORUM sayılır:
+ *  yazılım uygulanmış olabilecek kaldıracı "olmadı" diye kapatmaz. */
 const classify = (d: unknown, lang: string = RECORD_LANG): DriverResult => { const x = d as { ok?: unknown; unknown?: unknown; refusal?: unknown; detail?: unknown; exchangeCalls?: unknown; exchangeResponse?: unknown } | null;
-  if (x && x.ok === false && x.refusal === FUTURES_DRIVER_UNAVAILABLE && !("unknown" in x)) return d as DriverResult;
+  if (x && x.ok === false && (x.refusal === FUTURES_DRIVER_UNAVAILABLE || (DRIVER_REFUSALS as readonly unknown[]).includes(x.refusal)) && !("unknown" in x)) return d as DriverRefused;
+  const a = d as Partial<DriverApplied> | null;
+  if (a && a.ok === true && a.applied === true && Number.isInteger(a.leverage) && Number.isInteger(a.exchangeMax)) return { ...a, detail: String(a.detail ?? ""), exchangeCalls: Number.isInteger(a.exchangeCalls) ? Number(a.exchangeCalls) : 0 } as DriverApplied;
   if (x && x.ok === false && x.unknown === true && x.refusal === LEVERAGE_OUTCOME_UNKNOWN) return { ...x, detail: String(x.detail ?? ""), exchangeCalls: Number.isInteger(x.exchangeCalls) ? Number(x.exchangeCalls) : 0 } as DriverUnknown;
   return unknownOf(srvFor(lang).leverage.record.unrecognized); };
 const unknownOf = (detail: string): DriverUnknown => ({ ok: false, unknown: true, refusal: LEVERAGE_OUTCOME_UNKNOWN, detail, exchangeCalls: 0, exchangeResponse: null });

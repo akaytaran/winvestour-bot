@@ -125,7 +125,7 @@ export const TR_SRV = {
     summary: {
       capUnset: "kaldıraç tavanı SEÇİLMEDİ (boş ⇒ futures kapalı)", cap: "kaldıraç tavanı {cap}×", m2Unset: "M-2 futures çarpanı SEÇİLMEDİ (boş ⇒ futures kenarı ölçülemez)", m2: "M-2 futures çarpanı {m2}× (maliyetin katı)",
       modeNone: "SHORT kipi NONE: yalnız uzun yön, bugünkü davranış", mode: "SHORT kipi {mode}", on: "AÇIK", off: "KAPALI",
-      line: "{cap} · futures şalteri {futures} · {mode} · {m2} — futures yolu {path}.", pathOpen: "ayara göre AÇIK (emir yolu ayrıca yazılmadı: G21 kalemi f)", pathClosed: "KAPALI: {refusal}",
+      line: "{cap} · futures şalteri {futures} · {mode} · {m2} — futures yolu {path}.", pathOpen: "ayara göre AÇIK (motor henüz futures işlemi planlamıyor; futures yolu önce testnette denenir)", pathClosed: "KAPALI: {refusal}",
     },
     write: { readFailed: "ayar okunamadı ({name})", noRow: "risk_settings satırı yok (id=1); göç uygulanmamış olabilir", writeFailed: "ayar ya da E-1 defteri yazılamadı ({name}) — ayar DEĞİŞMEDİ" },
     modes: {
@@ -147,7 +147,7 @@ export const TR_SRV = {
     readFailed: "risk_profile okunamadı ({name})", writeReadFailed: "risk payları okunamadı ({name}) — hiçbir şey değişmedi", writeFailed: "risk payları ya da değişiklik kaydı yazılamadı ({name}) — hiçbir şey değişmedi",
   },
   leverage: {
-    commissionUnmeasured: "futures komisyon kademesi okunmadı: imzalı /fapi/v1/commissionRate çağrısı futures emir yolu ile doğar (G21 kalemi f, A-5); spot kademesi ya da örnek oran kullanılmaz",
+    commissionUnmeasured: "futures komisyon kademesi okunmadı: kurulumda imzalı /fapi/v1/commissionRate okuyucusu yalnız Binance Futures testnet ölçümünden sonra bağlanır (G21 kutusu 6); spot kademesi ya da örnek oran kullanılmaz",
     text: {
       invalid: "İstek okunamadı: sembol (ör. büyük harfli çift adı) ve kaldıraç (1 ya da daha büyük tam sayı) birlikte verilmeli. Hiçbir şey değişmedi.",
       aboveCap: "İstenen kaldıraç tavanı AŞIYOR, bu yüzden istek REDDEDİLDİ. Yazılım isteği sessizce tavana indirmez ve senin yerine bir sayı seçmez; tavanın altında bir kaldıraç iste ya da tavanı risk ayarından (kod ister) değiştir.",
@@ -156,9 +156,12 @@ export const TR_SRV = {
       unrecorded: "İsteğin kaydı olay defterine yazılamadı, bu yüzden istek REDDEDİLDİ: kaydı olmayan kaldıraç isteği ne uygulanır ne de sonucu bildirilir. Hiçbir şey değişmedi; biraz sonra yeniden dene.",
       k6Window: "Kaldıraç açılmadan hemen önce çift icra kanaryasının (K-6: aynı sinyal iki kez icra edilemez) BU dağıtımın kodunda ve son {hours} saat içinde başarıyla koşulmuş olması gerekir; bu kayıt yok ya da okunamadı, bu yüzden istek REDDEDİLDİ. İstek deftere yazıldı, borsaya hiçbir çağrı gitmedi ve kaldıraç DEĞİŞMEDİ.",
       driverUnavailable: "Komisyon ve funding yükü ölçüldü ve yukarıda yazılı (bu iki yük giriş eşiğinin tamamı DEĞİLDİR: alış-satış farkı ve emir defteri derinliği giriş kararında ayrıca ölçülür, M-2). İstek tavanın içinde olduğu için kabul edildi ve deftere yazıldı; ama kaldıracı borsaya yazan sürücü henüz KAPALI, bu yüzden borsaya hiçbir çağrı gitmedi ve kaldıraç DEĞİŞMEDİ.",
+      aboveBracket: "İstenen kaldıraç senin tavanının içinde ama borsanın bu sembol için kendi sınırının ÜSTÜNDE, bu yüzden istek REDDEDİLDİ: düşük olan sınır geçerlidir ve yazılım isteği sessizce düşürmez. Ayrıntıda yazan borsa sınırına eşit ya da altında bir kaldıraç iste. Hiçbir şey değişmedi.",
+      exchangeUnavailable: "Bu kaldıraç isteği için borsaya ulaşılamadı (sınır okunamadı ya da çağrı gönderilmedi), bu yüzden kaldıraç YAZILMADI. Hiçbir şey değişmedi; sonra yeniden dene.",
     },
     preview: "Önizleme: istenen kaldıraç tavanın içinde, komisyon ve funding yükü ölçüldü ve yukarıda yazılı. Bu yalnız önizlemedir: hiçbir şey kaydedilmedi ve uygulanmadı. İstek tek kullanımlık kodla gönderilirse deftere yazılır ve kaldıracı borsaya yazan sürücüye iletilir.",
     unknownText: "Kaldıraç isteği borsaya yazan sürücüye iletildi ama sürücü sonucu doğrulayamadı: kaldıracın borsada değişip değişmediği BİLİNMİYOR. Kayıt “sonuç bilinmiyor” olarak kapatıldı; yazılım bunu şu an borsadan okuyarak doğrulayamıyor. Yeniden istemeden önce borsadaki kaldıracı kendin kontrol et.",
+    appliedText: "Uygulandı: borsa {symbol} için {lev}× kaldıracı doğruladı (borsanın bu sembol için sınırı {max}×). İstek ve sonucu olay defterine yazıldı.",
     detail: {
       invalid: "sembol={symbol} kaldıraç={leverage}", capNull: "risk_settings.leverage_cap NULL — K-11: tavansız kaldıraç yoktur", aboveCap: "istenen {req}× > tavan {cap}× (risk_settings.leverage_cap) — tavana indirilmedi",
       keyNoFutures: "exchange_keys.enable_futures = {value} — borsaya çağrı gönderilmedi", accepted: "tavanın içinde · futures açık · anahtar yetkili · yük ölçüldü — uygulama sürücüde (G21 kalemi f)",

@@ -63,6 +63,35 @@ export async function readAvgPrice(symbol: string, deps: { exchange?: ExchangeDe
   return { ok: true, price: px, mins: typeof r.result.data?.mins === "number" ? r.result.data.mins : null, source: `avgPrice ${symbol} @${new Date((deps.now ?? Date.now)()).toISOString()}` };
 }
 
+// ---- FUTURES (USDS-M) KURALLARI (Tur 83 · G21 kalemi f ikinci dilim) — aynı ilke: çalışma anında okunur, koda gömülmez, eksikse emir GÖNDERİLMEZ ----
+// Futures exchangeInfo'nun filtre adları SPOT'tan farklıdır (Binance USDS-M belgesi): LOT_SIZE · MARKET_LOT_SIZE · PRICE_FILTER aynı alanlarla; asgari büyüklük `MIN_NOTIONAL.notional`;
+//   fiyat bandı `PERCENT_PRICE` (multiplierUp/multiplierDown, referans İŞARET FİYATI — yön ayrımı yok ⇒ iki yöne aynı çarpan). Uç sembol süzgeci almaz (bütün liste; ağırlık 1 — Tur 35 ölçümü).
+export const FUTURES_RULES_CALL = { path: "/fapi/v1/exchangeInfo", cls: "DISCOVERY", weight: 1 } as const;
+export const MARK_PRICE_CALL = { path: "/fapi/v1/premiumIndex", cls: "DISCOVERY", weight: 1 } as const;
+type RawFuturesFilter = RawFilter & { notional?: string; multiplierUp?: string; multiplierDown?: string };
+export async function readFuturesSymbolRules(symbol: string, deps: { exchange?: ExchangeDeps; now?: () => number } = {}): Promise<RulesReading> {
+  const now = deps.now ?? Date.now;
+  const r = await requestWithEvents<{ symbols?: (RawSymbol & { filters?: RawFuturesFilter[] })[] }>({ ...FUTURES_RULES_CALL }, deps.exchange);
+  if (!r.result.ok) return { ok: false, detail: `futuresExchangeInfo:${r.result.reason ?? ""}:${r.result.detail}` };
+  const s = (r.result.data?.symbols ?? []).find((x) => x.symbol === symbol);
+  if (!s) return { ok: false, detail: `futuresExchangeInfo:${symbol}:symbol-not-listed` };
+  const f = (t: string): RawFuturesFilter | undefined => (s.filters ?? []).find((x) => x.filterType === t);
+  const lot = bandOf(f("LOT_SIZE"), ["minQty", "maxQty", "stepSize"]), price = bandOf(f("PRICE_FILTER"), ["minPrice", "maxPrice", "tickSize"]), minNotional = f("MIN_NOTIONAL")?.notional;
+  if (!lot || !price || typeof minNotional !== "string" || !NUM.test(minNotional)) return { ok: false, detail: `futuresExchangeInfo:${symbol}:missing-filter(lot=${!!lot} price=${!!price} notional=${typeof minNotional})` };
+  const pp = f("PERCENT_PRICE"), up = pp?.multiplierUp, down = pp?.multiplierDown;
+  if (pp && !(typeof up === "string" && NUM.test(up) && typeof down === "string" && NUM.test(down))) return { ok: false, detail: `futuresExchangeInfo:${symbol}:bad-percent-price` };
+  const percent: PercentBand | null = pp ? { bidUp: up as string, bidDown: down as string, askUp: up as string, askDown: down as string, avgPriceMins: null } : null;
+  return { ok: true, rules: { symbol, status: String(s.status ?? "?"), baseAsset: String(s.baseAsset ?? "?"), quoteAsset: String(s.quoteAsset ?? "?"), lot, marketLot: bandOf(f("MARKET_LOT_SIZE"), ["minQty", "maxQty", "stepSize"]), price, percent, minNotional, applyMinToMarket: true, notionalFilter: "MIN_NOTIONAL", raw: s, source: `futuresExchangeInfo ${symbol} @${new Date(now()).toISOString()}` } };
+}
+/** Futures fiyat bandının referansı: İŞARET FİYATI (premiumIndex.markPrice). Okunamazsa ok:false → band denetlenemez → emir GÖNDERİLMEZ. */
+export async function readMarkPrice(symbol: string, deps: { exchange?: ExchangeDeps; now?: () => number } = {}): Promise<{ ok: true; price: string; mins: number | null; source: string } | { ok: false; detail: string }> {
+  const r = await requestWithEvents<{ symbol?: string; markPrice?: string }>({ ...MARK_PRICE_CALL, query: { symbol } }, deps.exchange);
+  if (!r.result.ok) return { ok: false, detail: `premiumIndex:${r.result.reason ?? ""}:${r.result.detail}` };
+  const px = r.result.data?.markPrice;
+  if (typeof px !== "string" || !NUM.test(px)) return { ok: false, detail: `premiumIndex:${symbol}:bad-mark-price` };
+  return { ok: true, price: px, mins: null, source: `premiumIndex ${symbol} @${new Date((deps.now ?? Date.now)()).toISOString()}` };
+}
+
 /** Kuralları uygula: AŞAĞI yuvarla, sonra sınırları denetle. Uymayan emir GÖNDERİLMEDEN reddedilir. `refPrice` fiyatsız emrin (MARKET, STOP_LOSS, TAKE_PROFIT) büyüklüğünü ölçmek içindir (fiyat kaynağı G16; yoksa ret).
  *  Büyüklük (notional) da AŞAĞI yuvarlanır (`ROUND_DOWN`): toFixed varsayılanı yarıyı yukarı yuvarlar ve sınırdaki bir emri MIN_NOTIONAL denetiminden geçirebilirdi.
  *  `avgPrice` PERCENT_PRICE_BY_SIDE'ın referansıdır: sembolde o filtre VARSA ve emir fiyatlıysa zorunludur — yoksa emir reddedilir (sessiz gevşetme yok, Ö-3). */

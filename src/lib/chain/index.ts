@@ -272,7 +272,12 @@ export async function runLink(ctx: LinkCtx, deps: ChainDeps = {}): Promise<LinkR
     if (p0.run) await stopEngine("TICK_MISSED", `ayar geçersiz, halka ${ctx.seq} açılmadı: ${e0}`, {}, deps.events); return end("NOT_PERMITTED"); } }
   const tickMs = setting.tickMs, leaseMs = leaseMsOf(tickMs);
   // KİRA: ilk halka NX ile alır; ardıl, öncülün kirasını CAS ile devralır (öncül bir sonraki tikte kaybettiğini görür ve durur). Yabancı kira → bu halka açılmaz.
-  let got = false; try { got = await store.acquire(lease, leaseMs); if (!got) { const cur = await store.lease(); if (cur && cur.seq === ctx.seq - 1) got = await store.renew(cur, lease, leaseMs); } } catch { got = false; }
+  // TUR 86 (Üretim S15-2 = A · canary:chain adım 18): öncül kirasını HER TİKTE yeniler; ardılın OKUMASI ile CAS'ı arasına o yenileme düşerse CAS eski belgeyle düşer (gerçek Upstash gidiş-dönüşü
+  //   0,5–2 s, Tur 84 kaydı). Kira hâlâ öncüldeyken ardıl YENİDEN OKUR ve CAS'ı yeniden dener. Döngü biter: CAS tuttuğunda · kira artık öncülün değilse · AYNI kira iki kez okunursa (yarış değil,
+  //   gerçek ret) · süre kira ömrünü (leaseMs) aşarsa. YENİ SAYI YOK — sınırın kendisi mevcut kira ömrüdür.
+  let got = false; try { got = await store.acquire(lease, leaseMs); const t0 = now();
+    for (let cur = got ? null : await store.lease(), seen = ""; !got && cur && JSON.stringify(cur) !== seen && now() - t0 < leaseMs; seen = JSON.stringify(cur), cur = got ? null : await store.lease()) {
+      if (cur.seq === ctx.seq - 1) got = await store.renew(cur, lease, leaseMs); else break; } } catch { got = false; }
   if (!got) return end("LEASE_HELD");
   const ledgerStore = deps.ledger?.store ?? prismaLedgerStore();
   const onFill = async (f: Fill) => { rec.fills++; let e: Awaited<ReturnType<typeof ledgerStore.findEntry>> = null; try { e = await ledgerStore.findEntry(f.clientId); } catch { e = null; }

@@ -29,7 +29,7 @@ export const DE_SRV = {
   },
   brain: {
     from: { ayar: "in den Einstellungen gesetzt", türetildi: "berechnet", sınırsız: "keine Grenze" },
-    tickMinutes: "alle {n} Min.", tickSeconds: "alle {n} s",
+    tickMinutes: "alle {n} min", tickSeconds: "alle {n} s",
     errors: {
       unknownField: "unbekanntes Feld: {field}", model: "Modell nicht auf der erlaubten Liste (kein Treffer in der Preistabelle): {value} — erlaubt: {allowed}",
       interval: "Aufrufintervall außerhalb der Grenzen ({min}–{max} ms): {value}", candidates: "Anzahl der Kandidaten außerhalb der Grenzen ({min}–{max}): {value}", candles: "Anzahl der Kerzen außerhalb der Grenzen ({min}–{max}): {value}",
@@ -124,7 +124,7 @@ export const DE_SRV = {
     summary: {
       capUnset: "Hebelobergrenze NICHT GEWÄHLT (leer ⇒ Futures geschlossen)", cap: "Hebelobergrenze {cap}×", m2Unset: "M-2-Futures-Vielfaches NICHT GEWÄHLT (leer ⇒ die Futures-Edge lässt sich nicht messen)", m2: "M-2-Futures-Vielfaches {m2}× (Vielfaches der Kosten)",
       modeNone: "SHORT-Modus NONE: nur Long, das heutige Verhalten", mode: "SHORT-Modus {mode}", on: "AN", off: "AUS",
-      line: "{cap} · Futures-Schalter {futures} · {mode} · {m2} — Futures-Pfad {path}.", pathOpen: "laut Einstellung OFFEN (der Orderpfad ist noch nicht geschrieben: G21 Punkt f)", pathClosed: "GESCHLOSSEN: {refusal}",
+      line: "{cap} · Futures-Schalter {futures} · {mode} · {m2} — Futures-Pfad {path}.", pathOpen: "laut Einstellung OFFEN (die Engine plant noch keine Futures-Trades; der Futures-Pfad wird zuerst im Testnet erprobt)", pathClosed: "GESCHLOSSEN: {refusal}",
     },
     write: { readFailed: "die Einstellung konnte nicht gelesen werden ({name})", noRow: "risk_settings-Zeile fehlt (id=1); die Migration ist eventuell nicht angewendet", writeFailed: "die Einstellung oder das E-1-Protokoll konnte nicht geschrieben werden ({name}) — die Einstellung hat sich NICHT GEÄNDERT" },
     modes: {
@@ -146,7 +146,7 @@ export const DE_SRV = {
     readFailed: "risk_profile konnte nicht gelesen werden ({name})", writeReadFailed: "die Risikoanteile konnten nicht gelesen werden ({name}) — nichts wurde geändert", writeFailed: "die Risikoanteile oder der Änderungseintrag konnten nicht geschrieben werden ({name}) — nichts wurde geändert",
   },
   leverage: {
-    commissionUnmeasured: "Futures-Kommissionsstufe nicht gelesen: Der signierte Aufruf /fapi/v1/commissionRate kommt mit dem Futures-Orderpfad (G21 Punkt f, A-5); die Spot-Stufe oder ein Beispielsatz wird nicht verwendet",
+    commissionUnmeasured: "Futures-Kommissionsstufe nicht gelesen: In einer Installation wird der signierte /fapi/v1/commissionRate-Leser erst nach der Prüfung im Binance-Futures-Testnet angeschlossen (G21 Kasten 6); die Spot-Stufe oder ein Beispielsatz wird nicht verwendet",
     text: {
       invalid: "Die Anfrage konnte nicht gelesen werden: Ein Symbol (z. B. der Paarname in Großbuchstaben) und ein Hebel (eine ganze Zahl ab 1) müssen zusammen angegeben werden. Nichts hat sich geändert.",
       aboveCap: "Der angeforderte Hebel ÜBERSCHREITET die Obergrenze, daher wurde die Anfrage ABGELEHNT. Die Software senkt die Anfrage nicht stillschweigend auf die Obergrenze und wählt keine Zahl für dich; fordere einen Hebel unter der Obergrenze an oder ändere die Obergrenze in den Risikoeinstellungen (braucht einen Code).",
@@ -155,9 +155,12 @@ export const DE_SRV = {
       unrecorded: "Der Eintrag der Anfrage konnte nicht ins Ereignisprotokoll geschrieben werden, daher wurde die Anfrage ABGELEHNT: Eine Hebelanfrage ohne Eintrag wird weder angewendet noch gemeldet. Nichts hat sich geändert; versuche es etwas später erneut.",
       k6Window: "Unmittelbar bevor ein Hebel geöffnet wird, muss der Doppelausführungs-Kanarientest (K-6: dasselbe Signal kann nicht zweimal ausgeführt werden) innerhalb der letzten {hours} Stunden erfolgreich auf dem Code DIESES Deployments gelaufen sein; dieser Eintrag fehlt oder konnte nicht gelesen werden, daher wurde die Anfrage ABGELEHNT. Die Anfrage wurde ins Protokoll geschrieben, kein Aufruf ging an die Börse, und der Hebel hat sich NICHT GEÄNDERT.",
       driverUnavailable: "Kommissions- und Funding-Last wurden gemessen und stehen oben (diese beiden Lasten sind nicht die ganze Einstiegsschwelle: Geld-Brief-Spanne und Orderbuchtiefe werden bei der Einstiegsentscheidung separat gemessen, M-2). Die Anfrage wurde akzeptiert, weil sie innerhalb der Obergrenze liegt, und ins Protokoll geschrieben; aber der Treiber, der den Hebel an die Börse schreibt, ist noch GESCHLOSSEN, daher ging kein Aufruf an die Börse, und der Hebel hat sich NICHT GEÄNDERT.",
+      aboveBracket: "Der angefragte Hebel liegt innerhalb deiner Obergrenze, aber ÜBER dem eigenen Limit der Börse für dieses Symbol, daher wurde die Anfrage ABGELEHNT: Das niedrigere Limit gilt, und die Software senkt die Anfrage nicht stillschweigend. Frage einen Hebel an, der höchstens dem in den Details genannten Börsenlimit entspricht. Nichts wurde geändert.",
+      exchangeUnavailable: "Die Börse war für diese Hebel-Anfrage nicht erreichbar (das Limit konnte nicht gelesen oder der Aufruf nicht gesendet werden), daher wurde der Hebel NICHT geschrieben. Nichts wurde geändert; versuche es später erneut.",
     },
     preview: "Vorschau: Der angeforderte Hebel liegt innerhalb der Obergrenze, Kommissions- und Funding-Last wurden gemessen und stehen oben. Das ist nur eine Vorschau: Nichts wurde gespeichert oder angewendet. Wird die Anfrage mit einem Einmalcode gesendet, wird sie ins Protokoll geschrieben und an den Treiber übergeben, der den Hebel an die Börse schreibt.",
     unknownText: "Die Hebelanfrage wurde an den Treiber übergeben, der an die Börse schreibt, aber der Treiber konnte das Ergebnis nicht bestätigen: Ob sich der Hebel an der Börse geändert hat, ist UNBEKANNT. Der Eintrag wurde als „Ergebnis unbekannt“ abgeschlossen; die Software kann das jetzt nicht durch Lesen von der Börse bestätigen. Prüfe den Hebel selbst an der Börse, bevor du erneut anforderst.",
+    appliedText: "Angewendet: Die Börse hat {lev}× für {symbol} bestätigt (das Limit der Börse für dieses Symbol ist {max}×). Anfrage und Ergebnis wurden ins Ereignisprotokoll geschrieben.",
     detail: {
       invalid: "symbol={symbol} leverage={leverage}", capNull: "risk_settings.leverage_cap NULL — K-11: Ohne Obergrenze gibt es keinen Hebel", aboveCap: "angefordert {req}× > Obergrenze {cap}× (risk_settings.leverage_cap) — nicht auf die Obergrenze gesenkt",
       keyNoFutures: "exchange_keys.enable_futures = {value} — kein Aufruf an die Börse gesendet", accepted: "innerhalb der Obergrenze · Futures offen · Schlüssel berechtigt · Last gemessen — das Anwenden ist Sache des Treibers (G21 Punkt f)",

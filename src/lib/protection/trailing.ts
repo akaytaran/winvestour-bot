@@ -17,7 +17,7 @@ import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 import { getDb } from "@/db/client";
 import { stopEngine, type Deps as EventDeps, type EmitResult } from "@/lib/events";
 import { periodOf } from "@/lib/fee-ledger";
-import { cancelOrder, placeOrder, readOrder, type OrderOutcome, type OrderResponse } from "@/lib/orders";
+import { FUTURES_PROTECTION_TYPE, cancelOrder, placeOrder, readOrder, type OrderOutcome, type OrderResponse } from "@/lib/orders";
 import { PROTECTION_TYPE, PROTECTION_WINDOW_MS, closeUnprotected, exchangeOrderIdOf, prismaPositionStore, type Closure, type Deps, type OpenPosition, type PositionStore } from "./index";
 
 /** AÇIK — A-1, UYDURULDU (sicil, geri alınabilir). SAYI DEĞİL ORAN: eşikler ölçülen değerlerle çarpılarak türer, koda bp yazılmaz.
@@ -36,7 +36,8 @@ export const REENTRY = { cooldownMs: 3_600_000, roundTripCeiling: 4 } as const;
 const D = Prisma.Decimal, NUM = /^\d+(\.\d+)?$/;
 const dec = (s: unknown): Prisma.Decimal | null => (typeof s === "string" && NUM.test(s) ? new D(s) : null);
 /** `costBp`: o pozisyon için GİRİŞTE ÖLÇÜLEN gidiş-dönüş maliyet (G13 taramasının çıktısı) — burada ÜRETİLMEZ, dışarıdan gelir (Ö-1). Yoksa stop taşınmaz. */
-export type TrailingState = { positionId: number; symbol: string; quantity: string; entryPrice: string; peakPrice: string; protectionOrderId: string; stopPrice: string; costBp: string | null };
+/** Tur 83: `market` pozisyonun piyasasıdır — futures pozisyonunda sorgu/iptal/çıkış/koruma futures emir yolundan gider (koruma `STOP_MARKET`); verilmezse SPOT. */
+export type TrailingState = { positionId: number; symbol: string; market?: "SPOT" | "FUTURES"; quantity: string; entryPrice: string; peakPrice: string; protectionOrderId: string; stopPrice: string; costBp: string | null };
 
 // ---- SAF yargılar (ağ yok, depo yok) ----
 /** Tepe yalnız YÜKSELİR; düşüş tepeyi değiştirmez. Okunamayan fiyat tepeyi değiştirmez. */
@@ -114,9 +115,9 @@ const gone = (c: Awaited<ReturnType<typeof cancelOrder>>): boolean => !c.ok && c
 /** Başlangıç durumu: tepe satırdan (yoksa giriş fiyatı), MEVCUT STOP BORSADAN okunur (Ö-1: varsayılmaz). Okunamazsa durum yok → bu pozisyon için olay tetikli yol başlamaz, koruma yerinde kalır. */
 export async function readTrailingState(pos: OpenPosition, costBp: string | null, deps: Deps = {}): Promise<{ ok: true; state: TrailingState } | { ok: false; detail: string }> {
   if (pos.protectionOrderId === null) return { ok: false, detail: "koruma kimliği yok" };
-  const q = await readOrder({ symbol: pos.symbol, orderId: pos.protectionOrderId }, deps), stop = q.ok ? dec((q.data as { stopPrice?: string }).stopPrice) : null;
+  const q = await readOrder({ symbol: pos.symbol, orderId: pos.protectionOrderId, market: pos.market }, deps), stop = q.ok ? dec((q.data as { stopPrice?: string }).stopPrice) : null;
   if (stop === null) return { ok: false, detail: `mevcut stop borsadan okunamadı: ${q.ok ? "stopPrice yok" : q.detail}` };
-  return { ok: true, state: { positionId: pos.id, symbol: pos.symbol, quantity: pos.quantity, entryPrice: pos.entryPrice, peakPrice: pos.peakPrice ?? pos.entryPrice, protectionOrderId: pos.protectionOrderId, stopPrice: stop.toFixed(8), costBp } };
+  return { ok: true, state: { positionId: pos.id, symbol: pos.symbol, market: pos.market, quantity: pos.quantity, entryPrice: pos.entryPrice, peakPrice: pos.peakPrice ?? pos.entryPrice, protectionOrderId: pos.protectionOrderId, stopPrice: stop.toFixed(8), costBp } };
 }
 
 /** FİYAT OLAYI (K-10): tepe → çıkış kararı → (çıkış yoksa) koruma taşıma kararı. Zamanlayıcı yok; aynı fiyat ikinci kez gelirse hiçbir emir çıkmaz. Hiçbir dal fırlatmaz. */
@@ -132,13 +133,13 @@ export async function onPriceEvent(s: TrailingState, ev: PriceEvent, deps: Deps 
 /** KÂR GERİ VERME ÇIKIŞI. Sıra: koruma emrinin durumu (dolmuşsa emir YOK) → İPTAL → MARKET SELL (EXIT). İptal edilemezse çıkış gönderilmez (koruma yerinde, pozisyon korumalı). */
 async function exitAtGiveBack(b: TrailOutcome, ev: PriceEvent, deps: Deps): Promise<TrailOutcome> {
   const now = deps.now ?? Date.now, store = deps.positions ?? prismaPositionStore(), s = b.state;
-  const q = await readOrder({ symbol: s.symbol, orderId: s.protectionOrderId }, deps);
+  const q = await readOrder({ symbol: s.symbol, orderId: s.protectionOrderId, market: s.market }, deps);
   if (q.ok && String(q.data.status) === "FILLED") { const marked = await store.close(s.positionId, "CLOSED", new Date(now()), s.peakPrice).catch(() => false); return { ...b, action: "ALREADY_EXITED", detail: `koruma emri borsada DOLMUŞ (stop tetiklenmiş); çıkış emri gönderilmedi, satır ${marked ? "CLOSED" : "işaretlenemedi"}` }; }
-  const c = await cancelOrder({ symbol: s.symbol, orderId: s.protectionOrderId }, deps);
+  const c = await cancelOrder({ symbol: s.symbol, orderId: s.protectionOrderId, market: s.market }, deps);
   if (!c.ok && !gone(c)) return { ...b, action: "UPDATE_REFUSED", cancel: false, detail: `çıkış için koruma iptali başarısız (${c.detail}); çıkış GÖNDERİLMEDİ, koruma yerinde` };
-  const sell = await placeOrder({ source: ev.source, symbol: s.symbol, market: "SPOT", side: "SELL", cls: "EXIT", type: "MARKET", quantity: s.quantity, refPrice: ev.price, seq: ev.seq, positionId: s.positionId }, deps);
+  const sell = await placeOrder({ source: ev.source, symbol: s.symbol, market: s.market ?? "SPOT", side: "SELL", cls: "EXIT", type: "MARKET", quantity: s.quantity, refPrice: ev.price, seq: ev.seq, positionId: s.positionId }, deps);
   if (sentData(sell) === null) { // koruma iptal edildi, satış çıkmadı: pozisyon KORUMASIZ → K-2 kapatma yolu (iptal gerekmez); o da düşerse motor durur
-    const closure = await closeUnprotected({ positionId: s.positionId, symbol: s.symbol, quantity: s.quantity, refPrice: ev.price, source: ev.source, seq: ev.seq + 1, cancelId: null, reasonCode: "PROTECTION_UPDATE_FAILED", detail: `kâr geri verme çıkışı gönderilemedi (${why(sell)}); koruma iptal edilmişti` }, deps);
+    const closure = await closeUnprotected({ positionId: s.positionId, symbol: s.symbol, market: s.market, quantity: s.quantity, refPrice: ev.price, source: ev.source, seq: ev.seq + 1, cancelId: null, reasonCode: "PROTECTION_UPDATE_FAILED", detail: `kâr geri verme çıkışı gönderilemedi (${why(sell)}); koruma iptal edilmişti` }, deps);
     return { ...b, action: closure.closed ? "CLOSED_UNPROTECTED" : "ENGINE_STOPPED", cancel: true, sent: sell, closure, detail: closure.detail };
   }
   const marked = await store.close(s.positionId, "CLOSED", new Date(now()), s.peakPrice).catch(() => false); // kapanış Neon'a DERHAL; son tepe aynı yazımda (K-10 olay tetikli)
@@ -147,15 +148,15 @@ async function exitAtGiveBack(b: TrailOutcome, ev: PriceEvent, deps: Deps): Prom
 /** KORUMAYI TAŞI (K-10/K-1): ÖNCE İPTAL, SONRA yeni STOP_LOSS. Pencere ölçülür (PROTECTION_WINDOW_MS); yeni koruma yerleşmez / pencere aşılır / kimlik yazılamazsa pozisyon kapatılır (K-2). */
 async function moveProtection(b: TrailOutcome, newStop: string, ev: PriceEvent, deps: Deps): Promise<TrailOutcome> {
   const now = deps.now ?? Date.now, store = deps.positions ?? prismaPositionStore(), s = b.state;
-  const c = await cancelOrder({ symbol: s.symbol, orderId: s.protectionOrderId }, deps), t0 = now();
+  const c = await cancelOrder({ symbol: s.symbol, orderId: s.protectionOrderId, market: s.market }, deps), t0 = now();
   if (!c.ok && !gone(c)) return { ...b, action: "UPDATE_REFUSED", cancel: false, detail: `koruma iptal edilemedi (${c.detail}); yeni koruma GÖNDERİLMEDİ, eski koruma yerinde (iki koruma emri açık bırakılmaz)` };
   const closeAs = async (cancelId: string | null, reasonCode: "PROTECTION_UPDATE_FAILED" | "PROTECTION_WINDOW_EXCEEDED" | "PROTECTION_LOST", detail: string, sent: OrderOutcome | null): Promise<TrailOutcome> => {
-    const closure = await closeUnprotected({ positionId: s.positionId, symbol: s.symbol, quantity: s.quantity, refPrice: ev.price, source: ev.source, seq: ev.seq + 1, cancelId, reasonCode, detail }, deps);
+    const closure = await closeUnprotected({ positionId: s.positionId, symbol: s.symbol, market: s.market, quantity: s.quantity, refPrice: ev.price, source: ev.source, seq: ev.seq + 1, cancelId, reasonCode, detail }, deps);
     return { ...b, action: closure.closed ? "CLOSED_UNPROTECTED" : "ENGINE_STOPPED", cancel: true, sent, closure, windowMs: now() - t0, detail: closure.detail };
   };
   // -2011: koruma borsada YOK — ya dolmuş ya iptal edilmiş; hesabın durumu bilinmiyor → yeniden yerleştirilmez, kapatılır (K-3 kararı)
   if (!c.ok) return closeAs(null, "PROTECTION_LOST", "koruma taşınırken emir borsada bulunamadı (-2011); yeniden yerleştirilmez", null);
-  const prot = await placeOrder({ source: ev.source, symbol: s.symbol, market: "SPOT", side: "SELL", cls: "PROTECTION", type: PROTECTION_TYPE, quantity: s.quantity, stopPrice: newStop, refPrice: ev.price, seq: ev.seq, positionId: s.positionId }, deps);
+  const prot = await placeOrder({ source: ev.source, symbol: s.symbol, market: s.market ?? "SPOT", side: "SELL", cls: "PROTECTION", type: s.market === "FUTURES" ? FUTURES_PROTECTION_TYPE : PROTECTION_TYPE, quantity: s.quantity, stopPrice: newStop, refPrice: ev.price, seq: ev.seq, positionId: s.positionId }, deps);
   const windowMs = now() - t0, data = sentData(prot), id = data === null ? null : exchangeOrderIdOf(data);
   if (id === null) return closeAs(null, "PROTECTION_UPDATE_FAILED", `taşınan koruma YERLEŞMEDİ (${why(prot)}); eski koruma iptal edilmişti, pozisyon korumasız`, prot);
   if (windowMs > PROTECTION_WINDOW_MS) return closeAs(id, "PROTECTION_WINDOW_EXCEEDED", `koruma taşıma penceresi ${windowMs} ms > ${PROTECTION_WINDOW_MS} ms`, prot);

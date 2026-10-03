@@ -20,8 +20,9 @@ import type { PositionCopyStore } from "./copy";
 import type { Keyring } from "@/lib/crypto";
 import { requestStop, type Deps as ControlDeps } from "@/lib/engine-control";
 import { stopEngine, type Deps as EventDeps, type EmitResult } from "@/lib/events";
-import { ORDER_PATHS, cancelOrder, placeOrder, readOrder, type OrderDeps, type OrderIntent, type OrderOutcome, type OrderResponse } from "@/lib/orders";
+import { FUTURES_PROTECTION_TYPE, ORDER_PATHS, cancelOrder, placeOrder, readOrder, type OrderDeps, type OrderIntent, type OrderOutcome, type OrderResponse } from "@/lib/orders";
 import { screenEntry, type ScreenDeps, type ScreenOutcome } from "@/lib/edge";
+import { futuresEntryEdge, type FuturesScreenOutcome } from "@/lib/edge/futures";
 import { screenReentry, type ReentryDeps, type ReentryOutcome } from "./trailing";
 import { screenHealth, type HealthDeps, type HealthOutcome } from "@/lib/health";
 
@@ -92,9 +93,13 @@ export function memoryPositionStore(): PositionStore & { rows: MemRow[]; fail: b
   });
 }
 
-export type EdgeStep = (p: Parameters<typeof screenEntry>[0], d: ScreenDeps) => Promise<ScreenOutcome>;
+/** Tur 84 (G22-a): adım FUTURES taramasını da taşır — plan tutma süresini (`holdMinutes`), bağımlılık futures ayar deposunu (`riskSettings`) geçirir; SPOT taraması ikisini okumaz. */
+export type EdgeStep = (p: Parameters<typeof screenEntry>[0] & { holdMinutes?: number | null }, d: ScreenDeps & { riskSettings?: OrderDeps["riskSettings"] }) => Promise<ScreenOutcome | FuturesScreenOutcome>;
 /** G13 kapısının varsayılanı. Enjeksiyon YALNIZ kapı/kanarya içindir (S-9); ürün kodunda enjekte eden yol KIRMIZI'dır. */
 export const defaultScreen: EdgeStep = (p, d) => screenEntry(p, d);
+/** Tur 84 (G22-a/b/d · Tur 83 §12 açığı): FUTURES açılışının varsayılan kenar kapısı — futures M-2 maliyeti + tutma süresince funding, eşik × M-2 futures çarpanı, K-9 brüt (src/lib/edge/futures.ts).
+ *  Enjeksiyon yalnız kapı/kanarya içindir (S-9). */
+export const defaultFuturesScreen: EdgeStep = (p, d) => futuresEntryEdge(p, d);
 export type ReentryStep = (p: { symbol: string }, d: ReentryDeps) => Promise<ReentryOutcome>;
 /** G14 (M-7) kapısının varsayılanı. Enjeksiyon YALNIZ kapı/kanarya içindir (S-9); ürün kodunda enjekte eden yol KIRMIZI'dır (gate:trailing `reentry-injected-in-src`). */
 export const defaultReentry: ReentryStep = (p, d) => screenReentry(p, d);
@@ -103,12 +108,15 @@ export type HealthStep = (d: HealthDeps) => Promise<HealthOutcome>;
 export const defaultHealth: HealthStep = (d) => screenHealth(d);
 export type Deps = OrderDeps & { positions?: PositionStore; copy?: PositionCopyStore; control?: ControlDeps; events?: EventDeps; ring?: Keyring; now?: () => number; by?: string; entry?: EntryStep; screen?: EdgeStep; reentry?: ReentryStep; health?: HealthStep; gross?: HealthDeps["gross"]; ratioLimit?: HealthDeps["limit"]; limits?: ReentryDeps["limits"]; ceilings?: ScreenDeps["ceilings"]; exposure?: ScreenDeps["exposure"] };
 /** `expectedMoveBp` ve `capital` bu modülde ÜRETİLMEZ: ilki Beyin'in (G15) çıktısı, ikincisi boyutlandırmanın ölçtüğü serbest sermayedir — ikisi de DIŞARIDAN gelir (Ö-1). */
-export type OpenPlan = { source: string; seq: number; symbol: string; exchangeKeyId: number; quantity: string; entryType: "LIMIT" | "MARKET"; entryPrice?: string | null; refPrice?: string | null; stopPrice: string; test?: boolean; expectedMoveBp: string | null; capital: string };
+/** Tur 83 (G21 · K-1/K-2): `market` FUTURES ise giriş futures emir yolundan, koruma borsada `STOP_MARKET` (reduceOnly), kapatma reduceOnly piyasa çıkışıyla yapılır; verilmezse SPOT (bugünkü yol AYNI).
+ *  Yön yine yalnız uzun: açığa satış girişi emir yolunda reddedilir (short kapalı / icra yazılmadı, G22). */
+export type OpenPlan = { source: string; seq: number; symbol: string; exchangeKeyId: number; quantity: string; entryType: "LIMIT" | "MARKET"; entryPrice?: string | null; refPrice?: string | null; stopPrice: string; test?: boolean; expectedMoveBp: string | null; capital: string; market?: "SPOT" | "FUTURES";
+  /** Tur 84 (G22-a): beklenen tutma süresi (dakika) — YALNIZ futures kenarı okur (funding terimi); varsayılanı YOKTUR, verilmezse futures girişi yapılmaz (HOLD_UNSPECIFIED). */ holdMinutes?: number | null };
 export type OpenRefusal = "REENTRY_REFUSED" | "HEALTH_REFUSED" | "EDGE_REFUSED" | "ENTRY_REFUSED" | "ENTRY_NOT_FILLED" | "POSITION_STORE_UNAVAILABLE" | "PROTECTION_FAILED" | "WINDOW_EXCEEDED" | "PROTECTION_UNRECORDED";
 export type Closure = { attempted: boolean; canceled: boolean | null; closed: boolean; status: "CLOSED" | "FAILED_UNPROTECTED_CLOSED" | "NOT_CLOSED"; engineStopped: boolean; detail: string };
 export type OpenOutcome =
   | { ok: true; positionId: number; protectionOrderId: string; windowMs: number; entry: OrderOutcome; protection: OrderOutcome }
-  | { ok: false; refusal: OpenRefusal; detail: string; positionId: number | null; windowMs: number | null; closure: Closure | null; event: EmitResult | null; entry?: OrderOutcome; protection?: OrderOutcome; screen?: ScreenOutcome; reentry?: ReentryOutcome; health?: HealthOutcome };
+  | { ok: false; refusal: OpenRefusal; detail: string; positionId: number | null; windowMs: number | null; closure: Closure | null; event: EmitResult | null; entry?: OrderOutcome; protection?: OrderOutcome; screen?: ScreenOutcome | FuturesScreenOutcome; reentry?: ReentryOutcome; health?: HealthOutcome };
 
 const num = (v: unknown): string | null => (typeof v === "string" && NUM.test(v) && new D(v).gt(0) ? v : null);
 /** Dolum: gerçekleşen miktar ve AĞIRLIKLI ORTALAMA dolum fiyatı, borsanın yanıtından (tahmin yok). Dolum yoksa null → pozisyon satırı YAZILMAZ. */
@@ -117,7 +125,7 @@ export function fillOf(d: OrderResponse): { qty: string; price: string } | null 
   let q = new D(0), c = new D(0);
   for (const f of fills) { q = q.add(f.qty as string); c = c.add(new D(f.qty as string).mul(f.price as string)); }
   if (q.gt(0)) return { qty: q.toFixed(8), price: c.div(q).toFixed(8) };
-  const ex = num(d.executedQty); return ex ? { qty: ex, price: "" } : null;
+  const ex = num(d.executedQty); return ex ? { qty: ex, price: num(d.avgPrice) ?? "" } : null; // Tur 83: futures yanıtı ağırlıklı ortalamayı `avgPrice`ta taşır
 }
 export const exchangeOrderIdOf = (d: OrderResponse): string | null => (d.orderId !== undefined && d.orderId !== null ? String(d.orderId) : d.clientOrderId ? String(d.clientOrderId) : null);
 const sentData = (r: OrderOutcome): OrderResponse | null => (r.ok && r.result.executed ? r.result.result.data : null);
@@ -125,7 +133,7 @@ const why = (r: OrderOutcome): string => (r.ok ? (r.result.executed ? "?" : Stri
 
 /** KORUMASIZ POZİSYONU KAPAT (K-2). Sıra ÖNEMLİ: önce borsadaki koruma emri İPTAL edilir (varsa), sonra piyasa çıkışı gönderilir — tersi, ters yönde AÇIK emir bırakır.
  *  İptal edilemezse çıkış GÖNDERİLMEZ (elde duran koruma emri hâlâ satmaya hazırdır) ve motor durur: yanlış yönde iki emir açmaktansa durmak doğrudur (Ö-3). */
-export async function closeUnprotected(p: { positionId: number | null; symbol: string; quantity: string; refPrice: string | null; source: string; seq: number; test?: boolean; cancelId: string | null; reasonCode: "PROTECTION_WINDOW_EXCEEDED" | "PROTECTION_FAILED" | "PROTECTION_LOST" | "PROTECTION_UPDATE_FAILED"; detail: string }, deps: Deps): Promise<Closure> {
+export async function closeUnprotected(p: { positionId: number | null; symbol: string; market?: "SPOT" | "FUTURES"; quantity: string; refPrice: string | null; source: string; seq: number; test?: boolean; cancelId: string | null; reasonCode: "PROTECTION_WINDOW_EXCEEDED" | "PROTECTION_FAILED" | "PROTECTION_LOST" | "PROTECTION_UPDATE_FAILED"; detail: string }, deps: Deps): Promise<Closure> {
   const now = deps.now ?? Date.now, store = deps.positions ?? prismaPositionStore();
   const halt = async (reason: string, canceled: boolean | null): Promise<Closure> => {
     await stopEngine("CLOSE_FAILED", `${p.symbol} · pozisyon=${p.positionId ?? "yok"} · ${p.detail} · ${reason}`, { positionId: p.positionId }, deps.events);
@@ -134,12 +142,12 @@ export async function closeUnprotected(p: { positionId: number | null; symbol: s
   };
   let canceled: boolean | null = null;
   if (p.cancelId !== null) {
-    const c = await cancelOrder({ symbol: p.symbol, orderId: p.cancelId }, deps);
+    const c = await cancelOrder({ symbol: p.symbol, orderId: p.cancelId, market: p.market }, deps);
     // -2011 "Unknown order sent": emir zaten borsada yok — iptal edilecek bir şey kalmamış demektir, ters yönde açık emir riski de yok
     canceled = c.ok || (!c.ok && c.refusal === "EXCHANGE_DENIED" && /:-2011/.test(c.detail));
     if (!canceled) return halt(`koruma emri (${p.cancelId}) İPTAL EDİLEMEDİ: ${c.ok ? "?" : c.detail}; çıkış gönderilmedi (ters yönde açık emir bırakılmaz)`, false);
   }
-  const exit = await placeOrder({ source: p.source, symbol: p.symbol, market: "SPOT", side: "SELL", cls: "EXIT", type: "MARKET", quantity: p.quantity, refPrice: p.refPrice, seq: p.seq, test: p.test }, deps);
+  const exit = await placeOrder({ source: p.source, symbol: p.symbol, market: p.market ?? "SPOT", side: "SELL", cls: "EXIT", type: "MARKET", quantity: p.quantity, refPrice: p.refPrice, seq: p.seq, test: p.test }, deps);
   if (sentData(exit) === null) return halt(`piyasa çıkışı gönderilemedi: ${why(exit)}`, canceled);
   const status = "FAILED_UNPROTECTED_CLOSED" as const;
   const marked = p.positionId === null ? false : await store.close(p.positionId, status, new Date(now())).catch(() => false);
@@ -163,10 +171,14 @@ export async function openProtectedPosition(p: OpenPlan, deps: Deps = {}): Promi
   // Çıkış ve koruma bu kapıya UĞRAMAZ: `closeUnprotected` ve `auditProtection` bu adımı çağırmaz (M-1; kapı zorlar).
   const priceRef = num(p.entryPrice) ?? num(p.refPrice);
   const notional = priceRef === null ? "0" : new D(p.quantity).mul(priceRef).toFixed(8);
-  const screen = await (deps.screen ?? defaultScreen)({ symbol: p.symbol, side: "BUY", notional, expectedMoveBp: p.expectedMoveBp, capital: p.capital },
-    { exchange: deps.exchange, events: deps.events, ring: deps.ring, key: deps.key, ceilings: deps.ceilings, exposure: deps.exposure, now });
+  // TUR 84 (G22-a · Tur 83 §12): FUTURES açılışı SPOT kenar kapısından (SPOT komisyon kademesi, SPOT defteri) DEĞİL, futures kenarından geçer — maliyete tutma süresince funding girer,
+  //   eşik M-2 futures çarpanıyla (kullanıcı ayarı) kurulur, K-9 brüt. SPOT açılışı AYNI adımı aynı girdilerle çağırır (davranış değişmedi).
+  const market = p.market ?? "SPOT";
+  const screenStep = market === "FUTURES" ? (deps.screen ?? defaultFuturesScreen) : (deps.screen ?? defaultScreen);
+  const screen = await screenStep({ symbol: p.symbol, side: "BUY", notional, expectedMoveBp: p.expectedMoveBp, capital: p.capital, holdMinutes: p.holdMinutes },
+    { exchange: deps.exchange, events: deps.events, ring: deps.ring, key: deps.key, ceilings: deps.ceilings, exposure: deps.exposure, riskSettings: deps.riskSettings, now });
   if (!screen.ok) return no("EDGE_REFUSED", `asgari kenar/tavan kapısı geçilmedi: ${screen.refusal} · ${screen.detail}`, { screen });
-  const entry = await (deps.entry ?? defaultEntry)({ source: p.source, symbol: p.symbol, market: "SPOT", side: "BUY", cls: "ENTRY", type: p.entryType, quantity: p.quantity, price: p.entryPrice, refPrice: p.refPrice, seq: p.seq, test: p.test }, deps);
+  const entry = await (deps.entry ?? defaultEntry)({ source: p.source, symbol: p.symbol, market, side: "BUY", cls: "ENTRY", type: p.entryType, quantity: p.quantity, price: p.entryPrice, refPrice: p.refPrice, seq: p.seq, test: p.test }, deps);
   const eData = sentData(entry);
   if (eData === null) return no("ENTRY_REFUSED", `giriş emri gönderilmedi/icra edilmedi: ${why(entry)}`, { entry });
   const fill = fillOf(eData), filledAt = now();
@@ -174,29 +186,29 @@ export async function openProtectedPosition(p: OpenPlan, deps: Deps = {}): Promi
   const entryPrice = num(fill.price) ?? num(p.entryPrice) ?? num(p.refPrice);
   if (entryPrice === null) return no("ENTRY_NOT_FILLED", "dolum fiyatı ölçülemedi (fills yok, plan fiyatı yok); pozisyon satırı yazılmadı", { entry });
   let positionId: number;
-  try { positionId = (await store.open({ exchangeKeyId: p.exchangeKeyId, symbol: p.symbol, market: "SPOT", side: "LONG", entryPrice, quantity: fill.qty, openedAt: new Date(filledAt) })).id; }
+  try { positionId = (await store.open({ exchangeKeyId: p.exchangeKeyId, symbol: p.symbol, market, side: "LONG", entryPrice, quantity: fill.qty, openedAt: new Date(filledAt) })).id; }
   catch (e) {
     const detail = `pozisyon satırı yazılamadı (${(e as { name?: string })?.name ?? "error"}); giriş DOLDU, kapatılıyor`;
-    const closure = await closeUnprotected({ positionId: null, symbol: p.symbol, quantity: fill.qty, refPrice: entryPrice, source: p.source, seq: p.seq + 1, test: p.test, cancelId: null, reasonCode: "PROTECTION_FAILED", detail }, deps);
+    const closure = await closeUnprotected({ positionId: null, symbol: p.symbol, market, quantity: fill.qty, refPrice: entryPrice, source: p.source, seq: p.seq + 1, test: p.test, cancelId: null, reasonCode: "PROTECTION_FAILED", detail }, deps);
     return no("POSITION_STORE_UNAVAILABLE", detail, { entry, closure });
   }
   // KORUMA: HEMEN ARDINDAN, aynı yoldan (kimlik → izin → kilit → bütçe → boğaz → kayıt); sınıf PROTECTION → PARA bütçesine takılmaz (M-1)
-  const prot = await placeOrder({ source: p.source, symbol: p.symbol, market: "SPOT", side: "SELL", cls: "PROTECTION", type: PROTECTION_TYPE, quantity: fill.qty, stopPrice: p.stopPrice, refPrice: entryPrice, seq: p.seq, test: p.test, positionId }, deps);
+  const prot = await placeOrder({ source: p.source, symbol: p.symbol, market, side: "SELL", cls: "PROTECTION", type: market === "FUTURES" ? FUTURES_PROTECTION_TYPE : PROTECTION_TYPE, quantity: fill.qty, stopPrice: p.stopPrice, refPrice: entryPrice, seq: p.seq, test: p.test, positionId }, deps);
   const windowMs = now() - filledAt, pData = sentData(prot), protectionOrderId = pData === null ? null : exchangeOrderIdOf(pData);
   if (protectionOrderId === null) {
     const detail = `koruma emri YERLEŞMEDİ (borsa emir kimliği yok): ${why(prot)}; pencere=${windowMs} ms`;
-    const closure = await closeUnprotected({ positionId, symbol: p.symbol, quantity: fill.qty, refPrice: entryPrice, source: p.source, seq: p.seq + 1, test: p.test, cancelId: null, reasonCode: "PROTECTION_FAILED", detail }, deps);
+    const closure = await closeUnprotected({ positionId, symbol: p.symbol, market, quantity: fill.qty, refPrice: entryPrice, source: p.source, seq: p.seq + 1, test: p.test, cancelId: null, reasonCode: "PROTECTION_FAILED", detail }, deps);
     return no("PROTECTION_FAILED", detail, { entry, protection: prot, positionId, windowMs, closure });
   }
   if (windowMs > PROTECTION_WINDOW_MS) {
     const detail = `koruma penceresi ${windowMs} ms > PROTECTION_WINDOW_MS ${PROTECTION_WINDOW_MS} ms; pozisyon korumasız kaldı`;
-    const closure = await closeUnprotected({ positionId, symbol: p.symbol, quantity: fill.qty, refPrice: entryPrice, source: p.source, seq: p.seq + 1, test: p.test, cancelId: protectionOrderId, reasonCode: "PROTECTION_WINDOW_EXCEEDED", detail }, deps);
+    const closure = await closeUnprotected({ positionId, symbol: p.symbol, market, quantity: fill.qty, refPrice: entryPrice, source: p.source, seq: p.seq + 1, test: p.test, cancelId: protectionOrderId, reasonCode: "PROTECTION_WINDOW_EXCEEDED", detail }, deps);
     return no("WINDOW_EXCEEDED", detail, { entry, protection: prot, positionId, windowMs, closure });
   }
   const attached = await store.protect(positionId, protectionOrderId).catch(() => false);
   if (!attached) {
     const detail = `koruma kimliği (${protectionOrderId}) satıra yazılamadı; satır OPEN yapılamadı, pozisyon kapatılıyor (K-2)`;
-    const closure = await closeUnprotected({ positionId, symbol: p.symbol, quantity: fill.qty, refPrice: entryPrice, source: p.source, seq: p.seq + 1, test: p.test, cancelId: protectionOrderId, reasonCode: "PROTECTION_FAILED", detail }, deps);
+    const closure = await closeUnprotected({ positionId, symbol: p.symbol, market, quantity: fill.qty, refPrice: entryPrice, source: p.source, seq: p.seq + 1, test: p.test, cancelId: protectionOrderId, reasonCode: "PROTECTION_FAILED", detail }, deps);
     return no("PROTECTION_UNRECORDED", detail, { entry, protection: prot, positionId, windowMs, closure });
   }
   return { ok: true, positionId, protectionOrderId, windowMs, entry, protection: prot };
@@ -224,10 +236,10 @@ export async function auditProtection(deps: Deps & { source?: string } = {}, giv
   for (const [i, pos] of open.entries()) {
     const seq = 900_000 + i;
     if (pos.protectionOrderId === null) { // DB CHECK bunu zaten engeller; yine de kapalı yönde davran (Ö-2)
-      const closure = await closeUnprotected({ positionId: pos.id, symbol: pos.symbol, quantity: pos.quantity, refPrice: pos.entryPrice, source, seq, cancelId: null, reasonCode: "PROTECTION_LOST", detail: "OPEN satırda koruma kimliği yok" }, deps);
+      const closure = await closeUnprotected({ positionId: pos.id, symbol: pos.symbol, market: pos.market, quantity: pos.quantity, refPrice: pos.entryPrice, source, seq, cancelId: null, reasonCode: "PROTECTION_LOST", detail: "OPEN satırda koruma kimliği yok" }, deps);
       rows.push({ positionId: pos.id, symbol: pos.symbol, protectionOrderId: null, state: "NO_ID", status: null, action: closure.closed ? "CLOSED" : "ENGINE_STOPPED", closure, detail: closure.detail }); continue;
     }
-    const q = await readOrder({ symbol: pos.symbol, orderId: pos.protectionOrderId }, deps);
+    const q = await readOrder({ symbol: pos.symbol, orderId: pos.protectionOrderId, market: pos.market }, deps);
     const status = q.ok ? String(q.data.status ?? "?") : null;
     const gone = !q.ok && q.refusal === "EXCHANGE_DENIED" && /:-2013/.test(q.detail); // -2013 "Order does not exist"
     if (q.ok && (RESTING_STATUSES as readonly string[]).includes(status as string)) { rows.push({ positionId: pos.id, symbol: pos.symbol, protectionOrderId: pos.protectionOrderId, state: "PROTECTED", status, action: "NONE", closure: null, detail: `koruma emri borsada duruyor (${status})` }); continue; }
@@ -241,7 +253,7 @@ export async function auditProtection(deps: Deps & { source?: string } = {}, giv
       rows.push({ positionId: pos.id, symbol: pos.symbol, protectionOrderId: pos.protectionOrderId, state: "UNVERIFIABLE", status: null, action: "ENGINE_STOPPED", closure: null, detail: `sorgu düştü (${q.detail}); motor ${s.ok ? "durduruldu" : "DURDURULAMADI"}` }); continue;
     }
     const detail = `koruma emri KAYBOLDU (durum=${status ?? "bulunamadı(-2013)"}); pozisyon kapatılıyor, koruma yeniden yerleştirilmez`;
-    const closure = await closeUnprotected({ positionId: pos.id, symbol: pos.symbol, quantity: pos.quantity, refPrice: pos.entryPrice, source, seq, cancelId: gone ? null : pos.protectionOrderId, reasonCode: "PROTECTION_LOST", detail }, deps);
+    const closure = await closeUnprotected({ positionId: pos.id, symbol: pos.symbol, market: pos.market, quantity: pos.quantity, refPrice: pos.entryPrice, source, seq, cancelId: gone ? null : pos.protectionOrderId, reasonCode: "PROTECTION_LOST", detail }, deps);
     rows.push({ positionId: pos.id, symbol: pos.symbol, protectionOrderId: pos.protectionOrderId, state: "LOST", status, action: closure.closed ? "CLOSED" : "ENGINE_STOPPED", closure, detail: closure.detail });
   }
   return { checked: open.length, rows, ok: rows.every((r) => r.state === "PROTECTED" || r.state === "FILLED") };
