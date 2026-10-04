@@ -5,12 +5,14 @@
 //   modal `role="dialog"` + `aria-modal="true"` + `aria-labelledby` (başlık) + `aria-describedby` (metin); açılınca odak modalın içine (kapat düğmesi) gider, Tab/Shift+Tab modalın içinde döner
 //   (odak tuzağı), Esc ve "Kapat" kapatır, kapanınca odak (i) düğmesine GERİ döner. Hedefler 44 px (DOKUN). Renkler belgeler/TASARIM-SISTEMI.md paletinden — yeni renk YOK.
 // METİN BU DOSYADA YOKTUR: başlık, gövde ve düğme adları çağırandan (sözlükten) gelir; 7 dil sözlükte durur.
+// Tur 88 (G37 · D3, S17-6): panelin BÜTÜN sekmelerinde kullanılır. Bölümün "ne yapar" cümlesi modalın İLK satırıysa çağıran `data-ne-yapar` verir; işaret (i) düğmesine konur
+//   (gate:ui "ne yapar" kuralı ve kanaryalar cümlenin bölümde bulunduğunu düğmeden ölçer; cümlenin kendisi modalda, sayfa gövdesinde DEĞİL).
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 const DOKUN = "2.75rem";
 export type BilgiMetni = { baslik: string; satirlar: string[]; acEtiketi: string; kapatEtiketi: string };
 
-export function BilgiModali({ metin, kimlik }: { metin: BilgiMetni; kimlik: string }) {
+export function BilgiModali({ metin, kimlik, "data-ne-yapar": neYapar }: { metin: BilgiMetni; kimlik: string; "data-ne-yapar"?: boolean }) {
   const [acik, setAcik] = useState(false), id = useId(), dugme = useRef<HTMLButtonElement>(null), kutu = useRef<HTMLDivElement>(null), kapat = useRef<HTMLButtonElement>(null);
   const kapa = useCallback(() => { setAcik(false); setTimeout(() => dugme.current?.focus(), 0); }, []);
   useEffect(() => { if (acik) kapat.current?.focus(); }, [acik]);
@@ -23,7 +25,7 @@ export function BilgiModali({ metin, kimlik }: { metin: BilgiMetni; kimlik: stri
     if (e.shiftKey && document.activeElement === ilk) { e.preventDefault(); son.focus(); } else if (!e.shiftKey && document.activeElement === son) { e.preventDefault(); ilk.focus(); }
   };
   return (<>
-    <button ref={dugme} type="button" data-bilgi-dugme={kimlik} aria-label={metin.acEtiketi} aria-haspopup="dialog" aria-expanded={acik} onClick={() => setAcik(true)}
+    <button ref={dugme} type="button" data-bilgi-dugme={kimlik} data-ne-yapar={neYapar ? "" : undefined} aria-label={metin.acEtiketi} aria-haspopup="dialog" aria-expanded={acik} onClick={() => setAcik(true)}
       style={{ minWidth: DOKUN, minHeight: DOKUN, borderRadius: 999, border: "1px solid #2b7fc9", background: "#141419", color: "#8ec9ff", fontWeight: 700, fontSize: "1rem", cursor: "pointer", flex: "0 0 auto" }}>i</button>
     {acik && <div data-bilgi-perde={kimlik} onClick={kapa} style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(11, 11, 12, 0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
       <div ref={kutu} role="dialog" aria-modal="true" aria-labelledby={`${id}-b`} aria-describedby={`${id}-m`} data-bilgi-modal={kimlik} onKeyDown={tus} onClick={(e) => e.stopPropagation()}

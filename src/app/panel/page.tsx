@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { PanelView, Card, Level, PositionView } from "@/lib/panel";
 import { DurdurFormu } from "./DurdurFormu";
 import { BilgiModali } from "./BilgiModali";
+import { HazirProfil } from "./HazirProfil";
 import { enroll, lockGate, platformAvailable, unlock, type LockRead, type LockState } from "@/lib/lock/client";
 import { dict, fill } from "@/lib/i18n";
 import { fmt } from "@/lib/i18n/format";
@@ -87,17 +88,21 @@ function RiskOzeti({ r }: { r: RiskView }) {
   const P: React.CSSProperties = { margin: ".3rem 0", lineHeight: 1.55 }, satir: React.CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: ".6rem" };
   const ac = (name: string) => fill(T.info.open, { name });
   return (<>
-    <div style={satir} data-ayar-satiri="leverageCap"><p id="risk-tavan-satiri" style={P}>{`${T.risk.fields.leverageCap}: ${s.leverageCap === null ? T.risk.capUnsetShort : `${s.leverageCap}×`}`}</p>
+    <div style={satir} data-ayar-satiri="leverageCap"><p id="risk-tavan-satiri" data-satir="deger" style={P}>{`${T.risk.fields.leverageCap}: ${s.leverageCap === null ? T.risk.capUnsetShort : `${s.leverageCap}×`}`}</p>
       <BilgiModali kimlik="leverageCap" metin={{ baslik: T.risk.fields.leverageCap, acEtiketi: ac(T.risk.fields.leverageCap), kapatEtiketi: T.info.close,
         satirlar: [s.leverageCap === null ? T.risk.leverageUnset : fill(T.risk.leverageSet, { value: s.leverageCap }), T.info.leverageWhat, T.info.leverageEmpty, T.info.leverageExchange, T.info.leverageChange] }} /></div>
-    <p style={P}>{s.futuresEnabled ? T.risk.futuresOn : T.risk.futuresOff}</p>
-    <div style={satir} data-ayar-satiri="shortMode"><p id="risk-short-satiri" style={P}>{`${T.risk.fields.shortMode}: ${kipAdi(s.shortMode)}`}</p>
+    <p data-satir="deger" style={P}>{fill(T.brief.futuresSwitch, { value: s.futuresEnabled ? T.common.on : T.common.off })}</p>
+    <div style={satir} data-ayar-satiri="shortMode"><p id="risk-short-satiri" data-satir="deger" style={P}>{`${T.risk.fields.shortMode}: ${kipAdi(s.shortMode)}`}</p>
       <BilgiModali kimlik="shortMode" metin={{ baslik: T.risk.fields.shortMode, acEtiketi: ac(T.risk.fields.shortMode), kapatEtiketi: T.info.close,
         satirlar: [`${fill(T.risk.mode, { label: kipAdi(s.shortMode) })} ${kipAnlami(s.shortMode)} ${T.risk.modeTodaySee}`.trim(), T.info.shortWhat, T.info.shortDefault, T.info.shortChange] }} /></div>
-    <p style={P}>{s.m2FuturesMultiple === null ? T.risk.m2Unset : fill(T.risk.m2Set, { value: s.m2FuturesMultiple })}</p>
-    <p style={P}>{fill(T.risk.futuresPath, { state: r.futures?.allowed ? T.risk.futuresPathOpen : T.risk.futuresPathClosed })}</p>
+    <p data-satir="deger" style={P}>{fill(T.brief.m2, { value: s.m2FuturesMultiple === null ? T.brief.notSet : fill(T.brief.m2Value, { value: s.m2FuturesMultiple }) })}</p>
+    <p data-satir="durum" style={P}>{fill(T.risk.futuresPath, { state: r.futures?.allowed ? T.risk.futuresPathOpen : T.risk.futuresPathClosed })}</p>
   </>);
 }
+
+/** Tur 88 (G37): risk ayarı bölümünün (i) modalı — sayfadan kalkan uzun cümleler (futures şalteri, M-2 çarpanı, değiştirme yardımı, kaldıraç isteği). Anlam aynı, yer değişti. */
+const riskAciklama = (r: RiskView | null): string[] => { const s = r?.ok ? r.settings : null; return [T.risk.what, ...(s ? [s.futuresEnabled ? T.risk.futuresOn : T.risk.futuresOff, s.m2FuturesMultiple === null ? T.risk.m2Unset : fill(T.risk.m2Set, { value: s.m2FuturesMultiple })] : [T.risk.unreadable]),
+  T.risk.changeHelp, T.leverage.help, ...(r?.ok && !r.futures?.allowed ? [T.leverage.passive] : [])]; };
 
 // Kenar/etiket renkleri koyu zeminde OKUNABİLİR seçildi (denetçi gözü, Tur 26 madde 7): ilk seçim küçük punto için ≈ 2,7:1 kontrast veriyordu; bunlar ≥ 7:1.
 const TONE: Record<Level, { bg: string; bd: string }> = {
@@ -116,7 +121,8 @@ function KilitEkrani({ durum, not, ac, tanit, ayar, dogrulayiciVar, yenile }: { 
       <div style={{ maxWidth: 860, margin: "0 auto" }}>
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: ".5rem" }}><h1 style={{ fontSize: "1.35rem" }}>{T.panel.title}</h1><LangSelect id="dil-kilit" /></div>
         <p style={{ margin: "0 0 .6rem" }}><a href="/durdur" style={{ color: "#ff8a7a", fontWeight: 700 }}>{T.panel.stopLink}</a> {T.panel.stopLinkHintLocked}</p>
-        <p style={{ lineHeight: 1.6 }}>{durum === "CHECKING" ? T.lock.checking : T.lock.state[durum]}</p>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: ".5rem" }}><p data-satir="durum" style={{ lineHeight: 1.6 }}>{T.brief.lockScreen[durum]}</p>
+          <BilgiModali kimlik="kilit-ekrani" metin={{ baslik: T.lock.heading, acEtiketi: fill(T.info.open, { name: T.lock.heading }), kapatEtiketi: T.info.close, satirlar: [durum === "CHECKING" ? T.lock.checking : T.lock.state[durum]] }} /></div>
         {durum === "LOCKED" && <p style={{ display: "flex", gap: ".6rem", flexWrap: "wrap" }}>
           <button onClick={ac} style={{ ...dugme(true, true) }}>{T.lock.unlock}</button>
           <button onClick={tanit} style={dugme(true)}>{T.lock.enroll}</button>
@@ -124,17 +130,20 @@ function KilitEkrani({ durum, not, ac, tanit, ayar, dogrulayiciVar, yenile }: { 
         {not !== null && <p role="status" aria-live="polite" style={{ lineHeight: 1.55, color: "#9a9aa2" }}>{not}</p>}
         {/* U-3 KILITLENME TUZAGI (Tur 63): ayar yuzeyi YALNIZ panelin icinde olsaydi, kilit ACIKKEN dogrulayicisi olmayan cihazda
             kullanici ne panele girebilir ne kilidi kapatabilirdi. Bu yuzden ayni yuzey BURADA da durur; korumasi TOTP'dir (S-8), kilit degil. */}
-        <h2 style={{ fontSize: "1.05rem", marginTop: "1.6rem" }}>{T.lock.heading}</h2>
+        <Baslik ad={T.lock.heading} kimlik="kilit-ayari-ekran" ust="1.6rem" satirlar={kilitAciklama(ayar, dogrulayiciVar)} />
         <KilitAyarYuzeyi ayar={ayar} dogrulayiciVar={dogrulayiciVar} yenile={yenile} yer="kilit-ekrani" />
       </div>
     </main>
   );
 }
-/** Kilit ayarının ekran cümlesi (U-3): NULL süre "not set" diye ve NE ANLAMA GELDİĞİYLE yazılır. */
+/** Kilit ayarının UZUN cümlesi (U-3): NULL süre "not set" diye ve NE ANLAMA GELDİĞİYLE yazılır. Tur 88 (G37): bu cümle (i) modalında; sayfada kısa satırlar durur. */
 const kilitSatiri = (ayar: LockRead | null) => ayar === null ? T.lock.reading : !ayar.ok ? T.lock.summaryUnreadable : [ayar.enabled ? T.lock.summaryOn : T.lock.summaryOff,
   ayar.repromptSeconds === null ? T.lock.repromptNone : fill(T.lock.repromptSet, { time: insanSure(ayar.repromptSeconds) }), T.lock.stopIndependent,
   ayar.updatedAt ? fill(T.lock.updated, { at: anTr(ayar.updatedAt) }) : T.lock.updatedUnknown].join(" ");
 
+/** Tur 88 (G37): kilit bölümünün (i) modalı — uzun durum cümlesi, cihaz cümlesi, değiştirme yardımı ve seçeneklerin anlamı (eskiden formun içinde koşullu çıkıyordu). */
+const kilitAciklama = (ayar: LockRead | null, dogrulayiciVar: boolean | null): string[] => [kilitSatiri(ayar), dogrulayiciVar === null ? T.lock.authUnmeasured : dogrulayiciVar ? T.lock.authYes : T.lock.authNo,
+  T.lock.changeHelp, T.lock.noteOn, T.lock.noteOff, ...(dogrulayiciVar === false ? [T.lock.noteNoOn] : [])];
 /** Ham saniyeyi İNSAN BİRİMİNE çevirir (P-2: ham saniye tek başına bırakılmaz). Sayı ÜRETMEZ, yalnız verilen sayıyı TEK biçimleyiciden geçirir. */
 export const insanSure = (sn: number): string => fmt.duration(sn * 1000);
 /** KİLİT AYARINI DEĞİŞTİREN YÜZEY (Tur 63 · G20 · S-8, U-3, A-1, Ö-2). AYNI bileşen İKİ yerde: kilit ekranında (kilitlenme tuzağına karşı) ve panelde.
@@ -149,9 +158,11 @@ export const insanSure = (sn: number): string => fmt.duration(sn * 1000);
 // METNİN TEK KAYNAĞI `scripts/lib/disclaimer.mjs`tir (onaylı EN hâli, 20 Eyl); sözlük (`T.entry.consent`) onu AYNEN taşır, kapı (`gate:ui`) eşitliği ölçer — bir kelime saparsa KIRMIZI.
 const kalinsiz = (t: string) => t.replace(/\*\*/g, "");
 
+/** Giriş şalterinin UZUN cümlesi — Tur 88 (G37): (i) modalında; sayfada `brief.entry` + son değişiklik satırı. */
 const girisSatiri = (e: EntryView | null) => !e?.ok
   ? `${T.entry.unreadable}${e?.detail ? ` ${fill(T.common.serverSaid, { why: e.detail })}` : ""}`
   : [e.enabled ? T.entry.on : T.entry.off, T.entry.independent, e.updatedAt ? fill(T.entry.updated, { at: anTr(e.updatedAt) }) : T.entry.updatedUnknown].join(" ");
+const girisAciklama = (e: EntryView | null): string[] => [T.entry.what, girisSatiri(e), T.entry.scope, T.entry.offNote];
 /** Ret cümlesi: ortak sözlükten (403 metni bölüme özgü). Sunucunun `errors` dizisi SEBEP olarak eklenir (ham kod değil, doğrulayıcının cümlesi). */
 const sonucMetni = (status: number, niye: string, ret403: string) =>
   status === 403 ? ret403 : status === 401 ? T.common.sessionLost : status === 423 ? T.common.locked
@@ -161,12 +172,12 @@ const sonucMetni = (status: number, niye: string, ret403: string) =>
     : fill(T.common.unexpected, { why: niye ? fill(T.common.serverSaid, { why: niye }) : "" });
 
 // Tur 82 (G20 FCM kalemi · KARAR-DEFTERI 1 Eki 2026 D2): bildirim İSTEĞE BAĞLI Firebase eklentisidir — durum sunucudan (ad sözleşmesi), dürüst cümle; değişken ADI yalnız Technical details'te, değer hiç.
+/** Tur 88 (G37): bildirim durumunun UZUN iki cümlesi — (i) modalında; sayfada tek satır `brief.notify`. */
+const bildirimAciklama = (n: PanelView["notifications"] | undefined): string[] => !n ? [T.common.unknown] : n.state === "ON" ? [T.notify.on, T.notify.onWhy] : n.state === "INVALID" ? [T.notify.invalid, fill(T.notify.invalidWhy, { details: T.common.technicalDetails })] : [T.notify.off, fill(T.notify.offWhy, { history: T.tabs.history })];
 function BildirimDurumu({ n }: { n: PanelView["notifications"] | undefined }) {
-  if (!n) return <p style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{T.common.unknown}</p>;
-  const [baslik, neden] = n.state === "ON" ? [T.notify.on, T.notify.onWhy] : n.state === "INVALID" ? [T.notify.invalid, fill(T.notify.invalidWhy, { details: T.common.technicalDetails })] : [T.notify.off, fill(T.notify.offWhy, { history: T.tabs.history })];
+  if (!n) return <p data-satir="durum" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{T.common.unknown}</p>;
   return (<section data-bildirim={n.state} style={box(n.state === "INVALID" ? "WARN" : "INFO")} aria-label={T.notify.heading}>
-    <p style={{ margin: ".2rem 0", lineHeight: 1.5, fontWeight: 600 }}>{baslik}</p>
-    <p style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{neden}</p>
+    <p data-satir="durum" style={{ margin: ".2rem 0", lineHeight: 1.5, fontWeight: 600 }}>{T.brief.notify[n.state]}</p>
     {n.state === "INVALID" && <TeknikAyrinti satirlar={[fill(T.technical.firebaseNames, { names: n.names.join(", ") })]} />}
   </section>);
 }
@@ -191,21 +202,20 @@ function GirisSalteriYuzeyi({ ayar, yenile }: { ayar: EntryView | null; yenile: 
   };
   return (
     <section style={box(!ayar?.ok || ayar.enabled ? "WARN" : "INFO")} aria-label={T.entry.heading}>
-      <p style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{girisSatiri(ayar)}</p>
+      <p data-satir="deger" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{fill(T.brief.entry, { value: !ayar?.ok ? T.brief.unreadable : ayar.enabled ? T.common.on : T.common.off })}</p>
+      {ayar?.ok && <p data-satir="deger" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{ayar.updatedAt ? fill(T.entry.updated, { at: anTr(ayar.updatedAt) }) : T.entry.updatedUnknown}</p>}
       {ayar?.ok && <p style={{ display: "flex", alignItems: "center", gap: ".7rem", flexWrap: "wrap", margin: ".6rem 0 .2rem" }}>
         <button id="giris-anahtar" type="button" role="switch" aria-checked={!!ayar.enabled} aria-label={T.entry.toggleAria} onClick={() => { if (secili) { setSecili(false); setDeger(""); setOnay(false); setTotp(""); } else { setSonuc(null); setSecili(true); setDeger(ayar.enabled ? "giris-kapali" : "giris-acik"); setOnay(false); } }}
           style={{ position: "relative", width: "3.4rem", height: DOKUN, borderRadius: "1.4rem", border: `1px solid ${ayar.enabled ? "#78e0a8" : "#6b6b73"}`, background: ayar.enabled ? "#0d2a16" : "#141419", cursor: "pointer", padding: 0 }}>
           <span aria-hidden="true" style={{ position: "absolute", top: ".6rem", left: ayar.enabled ? "1.7rem" : ".2rem", width: "1.4rem", height: "1.4rem", borderRadius: "50%", background: ayar.enabled ? "#78e0a8" : "#b4b4bb" }} /></button>
-        <span><strong>{ayar.enabled ? T.common.on : T.common.off}</strong> {T.entry.toggleHint}</span></p>}
+        <span data-satir="kontrol"><strong>{ayar.enabled ? T.common.on : T.common.off}</strong> {T.brief.toggleHint}</span></p>}
       {secili && (<div>
-        <p style={{ margin: ".4rem 0", lineHeight: 1.55, color: "#9a9aa2" }}>{T.entry.scope}</p>
         <div style={{ borderTop: "1px solid #23232a", padding: ".5rem 0" }}>
-          <p style={{ margin: ".2rem 0", lineHeight: 1.5 }}>{fill(T.entry.newValue, { value: deger === "giris-acik" ? T.common.on : T.common.off })}</p>
-          {secili && deger === "giris-kapali" && <p style={{ margin: ".35rem 0 0", lineHeight: 1.5, color: "#9a9aa2" }}>{T.entry.offNote}</p>}
+          <p data-satir="geri" style={{ margin: ".2rem 0", lineHeight: 1.5 }}>{fill(T.entry.newValue, { value: deger === "giris-acik" ? T.common.on : T.common.off })}</p>
           {acmaDenemesi && <div style={{ ...box("WARN"), margin: ".5rem 0 0" }}>
-            <p style={{ margin: ".2rem 0 .5rem", lineHeight: 1.55, fontWeight: 600 }}>{T.entry.readFirst}</p>
-            <p style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{kalinsiz(GIRIS_ONAY_UYARI)}</p>
-            <p style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{GIRIS_ONAY_RISK}</p>
+            <p data-satir="onay" style={{ margin: ".2rem 0 .5rem", lineHeight: 1.55, fontWeight: 600 }}>{T.entry.readFirst}</p>
+            <p data-satir="onay" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{kalinsiz(GIRIS_ONAY_UYARI)}</p>
+            <p data-satir="onay" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{GIRIS_ONAY_RISK}</p>
             <label style={{ ...secimEtiketi, marginTop: ".5rem" }}>
               <input type="checkbox" checked={onay} onChange={(e) => setOnay(e.target.checked)} aria-label={T.entry.consentAria} />
               <span>{T.entry.consentLabel}</span>
@@ -250,28 +260,26 @@ function KilitAyarYuzeyi({ ayar, dogrulayiciVar, yenile, yer }: { ayar: LockRead
   };
   return (
     <section style={box(ayar?.ok ? "INFO" : "WARN")} aria-label={yer === "panel" ? T.lock.heading : `${T.lock.heading} — ${T.lock.onLockScreen}`}>
-      <p style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{kilitSatiri(ayar)}</p>
-      <p style={{ margin: ".3rem 0", lineHeight: 1.55, color: "#9a9aa2" }}>
-        {dogrulayiciVar === null ? T.lock.authUnmeasured : dogrulayiciVar ? T.lock.authYes : T.lock.authNo}
-      </p>
+      <p data-satir="deger" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{ayar === null ? T.lock.reading : fill(T.brief.lock, { value: !ayar.ok ? T.brief.unreadable : ayar.enabled ? T.common.on : T.common.off })}</p>
+      {ayar?.ok && <p data-satir="deger" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{fill(T.brief.reprompt, { value: ayar.repromptSeconds === null ? T.brief.notSet : insanSure(ayar.repromptSeconds) })}</p>}
+      {/* U-3 (ANAYASA) D3'ten ÜSTÜN: doğrulayıcı YOKKEN "AÇIK" seçeneği sunulmaz ve NEDENİ ekranda yazılı kalır (uyarı) — modala taşınmaz (canary:lock-settings adım 13). */}
+      {dogrulayiciVar === false ? <p data-satir="uyari" style={{ margin: ".3rem 0", lineHeight: 1.55, color: "#b4b4bb" }}>{T.lock.authNo}</p>
+        : <p data-satir="durum" style={{ margin: ".3rem 0", lineHeight: 1.55, color: "#b4b4bb" }}>{dogrulayiciVar === null ? T.brief.device.unknown : T.brief.device.yes}</p>}
       {/* Tur 79 (S5): ayar OKUNMADAN (null) değiştirme formu ve "off/on" seçenekleri GÖSTERİLMEZ — üstteki satır "Reading …" der. */}
       {ayar !== null && <details style={{ marginTop: ".6rem" }}>
         <summary style={{ cursor: "pointer", minHeight: DOKUN, display: "flex", alignItems: "center" }}>{T.lock.change}</summary>
-        <p style={{ margin: ".4rem 0", lineHeight: 1.55, color: "#9a9aa2" }}>{T.lock.changeHelp}</p>
         <div style={{ borderTop: "1px solid #23232a", padding: ".5rem 0" }}>
           <label style={secimEtiketi}>
             <input type="checkbox" checked={kilitSecili} onChange={(e) => { setKilitSecili(e.target.checked); if (!e.target.checked) setKilitDeger(""); }} aria-label={T.lock.fieldLockAria} />
             <span>{T.lock.fieldLock}</span>
           </label>
+          {kilitSecili && dogrulayiciVar === false && <p data-satir="geri" style={{ margin: ".35rem 0 0", lineHeight: 1.5, color: "#9a9aa2" }}>{T.lock.noteNoOn}</p>}
           {kilitSecili && <label htmlFor={`kilit-deger-${yer}`} style={{ display: "block", margin: ".35rem 0 .2rem", color: "#9a9aa2" }}>{T.lock.fieldLockNew}</label>}
           {kilitSecili && <select id={`kilit-deger-${yer}`} value={kilitDeger} onChange={(e) => setKilitDeger(e.target.value)} style={alanStili}>
             <option value="">{T.common.choose}</option>
             <option value="kilit-kapali">{T.common.off}</option>
             {dogrulayiciVar && <option value="kilit-acik">{T.common.on}</option>}
           </select>}
-          {kilitSecili && kilitDeger === "kilit-acik" && <p style={{ margin: ".35rem 0 0", lineHeight: 1.5, color: "#9a9aa2" }}>{T.lock.noteOn}</p>}
-          {kilitSecili && kilitDeger === "kilit-kapali" && <p style={{ margin: ".35rem 0 0", lineHeight: 1.5, color: "#9a9aa2" }}>{T.lock.noteOff}</p>}
-          {kilitSecili && dogrulayiciVar === false && <p style={{ margin: ".35rem 0 0", lineHeight: 1.5, color: "#9a9aa2" }}>{T.lock.noteNoOn}</p>}
         </div>
         <div style={{ borderTop: "1px solid #23232a", padding: ".5rem 0" }}>
           <label style={secimEtiketi}>
@@ -280,7 +288,7 @@ function KilitAyarYuzeyi({ ayar, dogrulayiciVar, yenile, yer }: { ayar: LockRead
           </label>
           {sureSecili && <label htmlFor={`sure-deger-${yer}`} style={{ display: "block", margin: ".35rem 0 .2rem", color: "#9a9aa2" }}>{T.lock.fieldTimeNew}</label>}
           {sureSecili && <input id={`sure-deger-${yer}`} value={sureDeger} onChange={(e) => setSureDeger(e.target.value)} inputMode="numeric" autoComplete="off" style={{ ...alanStili, width: "8rem" }} />}
-          {sureSecili && <p style={{ margin: ".35rem 0 0", lineHeight: 1.5, color: sureGecerli ? "#9a9aa2" : TONE.WARN.bd }}>
+          {sureSecili && <p data-satir="geri" style={{ margin: ".35rem 0 0", lineHeight: 1.5, color: sureGecerli ? "#9a9aa2" : TONE.WARN.bd }}>
             {sureDeger.trim() === "" ? T.lock.timeEmpty : !sureGecerli ? T.lock.timeInvalid : fill(T.lock.timeOk, { time: insanSure(sureSayi as number), seconds: sureSayi })}
           </p>}
         </div>
@@ -302,13 +310,11 @@ const tikGovdesi = (ms: string) => JSON.stringify({ tickMs: Number(ms) });
 //   boşluk .5rem/.3rem ve kenar #2b7fc9 (etkin) / #33333c (panel alan/düğme kenarı) TASARIM-SISTEMI §3.1/§3.3/§5'teki mevcut değerlerdir.
 const kodEtiket: React.CSSProperties = { display: "flex", flexWrap: "wrap", alignItems: "center", columnGap: ".5rem", rowGap: ".3rem" };
 function eylemKenari(etkin: boolean) { return `1px solid ${etkin ? "#2b7fc9" : "#33333c"}`; }
-/** G32: kontrol bölümünün "ne yapar" cümlesi — tek stil, ikincil metin rengi (#b4b4bb, TASARIM-SISTEMI ikincil metin). */
-const NE: React.CSSProperties = { margin: ".1rem 0 .4rem", lineHeight: 1.5, color: "#b4b4bb" };
 function box(level: Level): React.CSSProperties { return { background: TONE[level].bg, border: `1px solid ${TONE[level].bd}`, borderRadius: 8, padding: "0.9rem 1.1rem", margin: "0.6rem 0" }; }
 
 function CardBlock({ c, head }: { c: Card; head?: string }) {
   return (
-    <section style={box(c.level)} aria-label={`${head ?? ""} ${c.title}`.trim()}>
+    <section data-satir="kayit" style={box(c.level)} aria-label={`${head ?? ""} ${c.title}`.trim()}>
       <h3 style={{ margin: "0 0 .45rem", fontSize: "1rem" }}><span style={{ fontSize: ".72rem", letterSpacing: ".08em", color: TONE[c.level].bd, marginRight: ".5rem" }}>{T.technical.levels[c.level]}</span>{c.title}</h3>
       {c.lines.map((l, i) => <p key={i} style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{l}</p>)}
     </section>
@@ -320,6 +326,16 @@ function TeknikAyrinti({ satirlar, children }: { satirlar?: (string | null | und
   return (<details data-teknik style={{ marginTop: ".6rem" }}><summary style={{ cursor: "pointer", color: "#9a9aa2", minHeight: DOKUN, display: "flex", alignItems: "center" }}>{T.common.technicalDetails}</summary>
     <p style={{ margin: ".3rem 0", lineHeight: 1.5, color: "#9a9aa2", fontSize: ".9rem" }}>{T.common.technicalDetailsNote}</p>
     {dolu.map((l, i) => <p key={i} style={{ margin: ".3rem 0", lineHeight: 1.55, fontSize: ".92rem" }}>{l}</p>)}{children}</details>);
+}
+
+/** Tur 88 (G37 · D3, S17-6): modal satırlarından boş/eksik olanları atar (koşullu cümleler). */
+const dolu = (x: (string | null | undefined | false)[]): string[] => x.filter((y): y is string => typeof y === "string" && y.trim() !== "");
+/** BÖLÜM BAŞLIĞI + BİLGİ (i) (Tur 88 · G37): başlık ve yanında (i) düğmesi; bölümün UZUN açıklaması YALNIZ modalda durur, sayfada ad + değer + tek satır durum + kontrol kalır.
+ *  `data-ne-yapar`: modalın ilk satırı bölümün "ne yapar" cümlesidir (gate:ui ve kanaryalar işareti (i) düğmesinden ölçer). */
+function Baslik({ id, ad, kimlik, satirlar, ust = "1.4rem", "data-ne-yapar": neYapar }: { id?: string; ad: string; kimlik: string; satirlar: (string | null | undefined | false)[]; ust?: string; "data-ne-yapar"?: boolean }) {
+  return (<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: ".5rem", marginTop: ust }}>
+    <h2 id={id} style={{ fontSize: "1.05rem", margin: ".4rem 0" }}>{ad}</h2>
+    <BilgiModali kimlik={kimlik} data-ne-yapar={neYapar} metin={{ baslik: ad, acEtiketi: fill(T.info.open, { name: ad }), kapatEtiketi: T.info.close, satirlar: dolu(satirlar) }} /></div>);
 }
 
 /** KALDIRAÇ İSTEĞİ (Tur 44 · G21 kalemi i · K-11, S-8, U-4). Önizleme `GET /api/risk/leverage` (oturum) komisyon VE funding yükünü SAYI + BİRİMLE ucun cümlesinden gösterir;
@@ -337,11 +353,10 @@ function KaldiracYuzeyi({ pasif }: { pasif: boolean }) {
       else setOut(j); } catch { setHata(T.leverage.unreachable); } };
   const sonucCumlesi = out?.text ? fill(T.leverage.serverNote, { note: out.text }) : T.leverage.noSentence;
   return (<details style={{ marginTop: ".6rem" }}><summary style={{ cursor: "pointer", minHeight: DOKUN, display: "flex", alignItems: "center" }}>{T.leverage.summary}</summary>
-    <p style={{ margin: ".4rem 0", lineHeight: 1.5, color: "#9a9aa2" }}>{T.leverage.help}</p>
     <label style={{ ...secimEtiketi, margin: ".3rem 0" }}>{T.leverage.symbol} <input value={sym} onChange={(e) => setSym(e.target.value.toUpperCase())} autoComplete="off" style={{ ...alanStili, width: "8rem" }} /></label>
     <label style={{ ...secimEtiketi, margin: ".3rem 0" }}>{T.leverage.times} <input value={lev} onChange={(e) => setLev(e.target.value)} inputMode="numeric" autoComplete="off" style={{ ...alanStili, width: "5rem" }} /></label>
     <button onClick={() => void gonder(false)} disabled={!hazir} style={{ ...dugme(hazir), marginRight: ".5rem" }}>{T.leverage.preview}</button>
-    {pasif ? <p data-kaldirac-pasif style={{ margin: ".6rem 0", lineHeight: 1.5, color: "#9a9aa2" }}>{T.leverage.passive}</p>
+    {pasif ? <p data-kaldirac-pasif data-satir="durum" style={{ margin: ".6rem 0", lineHeight: 1.5, color: "#b4b4bb" }}>{T.brief.levPassive}</p>
       : hazir && <label style={{ ...kodEtiket, margin: ".6rem 0 .3rem" }}>{T.leverage.codeLabel}
       <input value={kod} onChange={(e) => setKod(e.target.value)} inputMode="numeric" maxLength={6} autoComplete="one-time-code" style={{ ...alanStili, width: "7rem" }} /></label>}
     <button onClick={() => void gonder(true)} disabled={!istek} style={dugme(istek, true)}>{T.leverage.send}</button>
@@ -428,22 +443,18 @@ function AnahtarYuzeyi({ durum, yenile }: { durum: KeyView | null; yenile: () =>
     await yenile();
   };
   const alan = { display: "block", width: "100%", minHeight: DOKUN, boxSizing: "border-box", padding: ".7rem .8rem", fontSize: "1rem", background: "#141419", color: "#e8e8ea", border: "1px solid #33333c", borderRadius: 6 } as const;
-  const ozet = !durum?.ok ? T.key.statusUnreadable : durum.present ? T.key.statusPresent : T.key.statusAbsent;
-  return (
+  const uzunOzet = !durum?.ok ? T.key.statusUnreadable : durum.present ? T.key.statusPresent : T.key.statusAbsent;
+  // Tur 88 (G37): uzun durum cümlesi ve anahtar oluşturma rehberi (nasıl · izinler · IP · en yeni anahtar) (i) modalında; sayfada tek satır durum.
+  return (<>
+    <Baslik ad={T.key.heading} kimlik="anahtar" data-ne-yapar satirlar={[T.key.what, uzunOzet, T.key.howTo, T.key.permissions, T.key.ip, T.key.newest]} ust=".4rem" />
     <section id="anahtar-bolumu" style={box(!durum?.ok ? "WARN" : durum.present ? "INFO" : "WARN")} aria-label={T.key.heading}>
-      <p id="anahtar-ozet" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{ozet}</p>
+      <p id="anahtar-ozet" data-satir="durum" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{fill(T.brief.row, { name: T.prereq.names.key, value: !durum?.ok ? T.brief.unreadable : durum.present ? T.brief.saved : T.brief.notSaved })}</p>
       <details data-teknik style={{ marginTop: ".6rem" }}><summary style={{ cursor: "pointer", color: "#9a9aa2", minHeight: DOKUN, display: "flex", alignItems: "center" }}>{T.common.technicalDetails}</summary>
         <p style={{ margin: ".3rem 0", lineHeight: 1.5, color: "#9a9aa2", fontSize: ".9rem" }}>{T.common.technicalDetailsNote}</p>
-        <div id="anahtar-durum">{(durum?.lines ?? [T.key.statusUnreadable]).map((l, i) => <p key={i} style={{ margin: ".3rem 0", lineHeight: 1.55, fontSize: ".92rem" }}>{l}</p>)}</div>
+        <div id="anahtar-durum">{(durum?.lines ?? [uzunOzet]).map((l, i) => <p key={i} style={{ margin: ".3rem 0", lineHeight: 1.55, fontSize: ".92rem" }}>{l}</p>)}</div>
       </details>
       <details id="anahtar-detay" style={{ marginTop: ".6rem" }}>
         <summary style={{ cursor: "pointer", minHeight: DOKUN, display: "flex", alignItems: "center" }}>{durum?.present ? T.key.replace : T.key.add}</summary>
-        <div style={{ margin: ".5rem 0", lineHeight: 1.55, color: "#9a9aa2" }}>
-          <p style={{ margin: ".3rem 0" }}>{T.key.howTo}</p>
-          <p style={{ margin: ".3rem 0" }}>{T.key.permissions}</p>
-          <p style={{ margin: ".3rem 0" }}>{T.key.ip}</p>
-          <p style={{ margin: ".3rem 0" }}>{T.key.newest}</p>
-        </div>
         <form method="post" onSubmit={(e) => void gonder(e)} aria-label={T.key.form} style={{ maxWidth: 520 }}>
           <label htmlFor="anahtar-ad" style={{ display: "block", margin: ".5rem 0 .3rem", color: "#9a9aa2" }}>{T.key.fieldName}</label>
           <input id="anahtar-ad" value={ad} onChange={(e) => setAd(e.target.value)} maxLength={64} autoComplete="off" spellCheck={false} disabled={gonderiliyor} style={alan} />
@@ -458,7 +469,7 @@ function AnahtarYuzeyi({ durum, yenile }: { durum: KeyView | null; yenile: () =>
         <div id="anahtar-sonuc" role="status" aria-live="polite">{sonuc !== null && <p style={{ ...box(sonuc.ton), lineHeight: 1.55 }}>{sonuc.metin}</p>}</div>
       </details>
     </section>
-  );
+  </>);
 }
 
 // ---- G32 (Tur 76 · ek madde 3 · güvenlik yüzeyi PARA/KİMLİK; K-7, S-8, U-3, Ö-2) — MOTOR DURUM KARTI + BAŞLAT/DURDUR + ÖN KOŞUL LİSTESİ ----
@@ -469,36 +480,40 @@ function AnahtarYuzeyi({ durum, yenile }: { durum: KeyView | null; yenile: () =>
 type EngineState = PanelView["engineState"];
 const DURUM_TONU: Record<EngineState, Level> = { RUNNING: "OK", STOPPED: "WARN", NO_PERMIT: "WARN", UNKNOWN: "ALARM" };
 const durumEtiketi = (h: EngineState): { ad: string; ton: Level; cumle: string } => ({ ad: T.engine.state[h].name, ton: DURUM_TONU[h], cumle: T.engine.state[h].text });
-type Kosul = { k: string; durum: "tamam" | "eksik" | "bilinmiyor" | "bilgi"; cumle: string; href?: string; bag?: string };
+/** Tur 88 (G37): `kisa` sayfada kalan tek satır (ad: değer); `cumle` uzun anlamı — "Before you start" başlığının (i) modalında. */
+type Kosul = { k: string; durum: "tamam" | "eksik" | "bilinmiyor" | "bilgi"; cumle: string; kisa: string; href?: string; bag?: string };
+const kisa = (name: string, value: string) => fill(T.brief.row, { name, value });
 const yuzde = (v: string) => fmt.pct(v);
 /** ÖN KOŞULLAR (ek madde 3 + GK EK). Engelleyen: anahtar · tik · tavan · altyapı · tek pay · toplam maruziyet. Bilgi: giriş şalteri · sermaye. Okunamayan satır "bilinmiyor" (var sayılmaz). */
 function onKosullar(a: { anahtar: KeyView | null; settings: Settings | null; giris: EntryView | null; view: PanelView }): Kosul[] {
-  const s = a.settings, cc = s?.ok ? s.costCap : undefined, tv = s?.ok ? s.tickView : undefined, rc = a.view.riskCaps, cap = a.view.capital, P = T.prereq, N = P.names;
-  const oku = (k: string, ad: string, href: string): Kosul => ({ k, durum: "bilinmiyor", cumle: fill(P.unreadable, { name: ad }), href, bag: fill(P.goTo, { name: ad }) });
+  const s = a.settings, cc = s?.ok ? s.costCap : undefined, tv = s?.ok ? s.tickView : undefined, rc = a.view.riskCaps, cap = a.view.capital, P = T.prereq, N = P.names, B = T.brief;
+  const oku = (k: string, ad: string, href: string): Kosul => ({ k, durum: "bilinmiyor", cumle: fill(P.unreadable, { name: ad }), kisa: kisa(ad, B.unreadable), href, bag: fill(P.goTo, { name: ad }) });
   const rows: Kosul[] = [];
   rows.push(!a.anahtar?.ok ? oku("anahtar", N.key, "#anahtar-bolumu")
-    : a.anahtar.present ? { k: "anahtar", durum: "tamam", cumle: P.keyOk }
-    : { k: "anahtar", durum: "eksik", cumle: P.keyMissing, href: "#anahtar-bolumu", bag: P.keyFix });
+    : a.anahtar.present ? { k: "anahtar", durum: "tamam", cumle: P.keyOk, kisa: kisa(N.key, B.saved) }
+    : { k: "anahtar", durum: "eksik", cumle: P.keyMissing, kisa: kisa(N.key, B.missing), href: "#anahtar-bolumu", bag: P.keyFix });
   rows.push(!tv ? oku("tik", N.tick, "#tik-araligi")
-    : tv.tickMs !== null ? { k: "tik", durum: "tamam", cumle: fill(P.tickOk, { every: fmt.every(tv.tickMs) }) }
-    : { k: "tik", durum: "eksik", cumle: P.tickMissing, href: "#tik-araligi", bag: P.tickFix });
+    : tv.tickMs !== null ? { k: "tik", durum: "tamam", cumle: fill(P.tickOk, { every: fmt.every(tv.tickMs) }), kisa: kisa(N.tick, fmt.every(tv.tickMs)) }
+    : { k: "tik", durum: "eksik", cumle: P.tickMissing, kisa: kisa(N.tick, B.missing), href: "#tik-araligi", bag: P.tickFix });
   if (!cc) { rows.push(oku("tavan", N.cap, "#maliyet-tavani"), oku("altyapi", N.infra, "#maliyet-tavani")); }
   else { const tavanEksik = cc.totalUsd === null && cc.brainMonthlyUsd === null && cc.behavior === "BRAIN_OFF", altyapiEksik = cc.infraUsd === null && cc.brainMonthlyUsd === null && !(cc.behavior === "NO_LIMIT" && cc.totalUsd === null);
     const baskaSebep = !!s?.capEmpty && !tavanEksik && !altyapiEksik;
-    rows.push(tavanEksik || baskaSebep ? { k: "tavan", durum: "eksik", cumle: P.capOffNow, href: "#maliyet-tavani", bag: P.capFix }
-      : { k: "tavan", durum: "tamam", cumle: cc.totalUsd === null ? (cc.behavior === "NO_LIMIT" ? P.capOkNoLimit : P.capOkBrain) : fill(P.capOkTotal, { amount: fmt.usdMonth(cc.totalUsd) }) });
-    rows.push(altyapiEksik ? { k: "altyapi", durum: "eksik", cumle: P.infraMissing, href: "#maliyet-tavani", bag: P.infraFix }
-      : { k: "altyapi", durum: "tamam", cumle: cc.infraUsd === null ? P.infraNotNeeded : fill(P.infraOk, { amount: fmt.usdMonth(cc.infraUsd) }) }); }
+    rows.push(tavanEksik || baskaSebep ? { k: "tavan", durum: "eksik", cumle: P.capOffNow, kisa: kisa(N.cap, B.missing), href: "#maliyet-tavani", bag: P.capFix }
+      : { k: "tavan", durum: "tamam", cumle: cc.totalUsd === null ? (cc.behavior === "NO_LIMIT" ? P.capOkNoLimit : P.capOkBrain) : fill(P.capOkTotal, { amount: fmt.usdMonth(cc.totalUsd) }),
+        kisa: kisa(N.cap, cc.totalUsd === null ? (cc.behavior === "NO_LIMIT" ? B.noLimit : B.ownCap) : fmt.usdMonth(cc.totalUsd)) });
+    rows.push(altyapiEksik ? { k: "altyapi", durum: "eksik", cumle: P.infraMissing, kisa: kisa(N.infra, B.missing), href: "#maliyet-tavani", bag: P.infraFix }
+      : { k: "altyapi", durum: "tamam", cumle: cc.infraUsd === null ? P.infraNotNeeded : fill(P.infraOk, { amount: fmt.usdMonth(cc.infraUsd) }), kisa: kisa(N.infra, cc.infraUsd === null ? B.notNeeded : fmt.usdMonth(cc.infraUsd)) }); }
   const pay = (k: string, ad: string, v: string | null | undefined, duzelt: string): Kosul => !rc.ok ? oku(k, ad, "#risk-paylari")
-    : v !== null && v !== undefined ? { k, durum: "tamam", cumle: fill(P.shareOk, { name: ad, value: yuzde(v) }) }
-    : { k, durum: "eksik", cumle: fill(P.shareMissing, { name: ad }), href: "#risk-paylari", bag: duzelt };
+    : v !== null && v !== undefined ? { k, durum: "tamam", cumle: fill(P.shareOk, { name: ad, value: yuzde(v) }), kisa: kisa(ad, yuzde(v)) }
+    : { k, durum: "eksik", cumle: fill(P.shareMissing, { name: ad }), kisa: kisa(ad, B.missing), href: "#risk-paylari", bag: duzelt };
   rows.push(pay("tek-pay", N.single, rc.ok ? rc.singlePct : null, P.singleFix), pay("toplam-pay", N.total, rc.ok ? rc.totalPct : null, P.totalFix));
-  rows.push(!a.giris?.ok ? { k: "giris", durum: "bilgi", cumle: P.entryUnreadable, href: "#giris-salteri", bag: fill(P.goTo, { name: N.entry }) }
-    : a.giris.enabled ? { k: "giris", durum: "bilgi", cumle: P.entryOn, href: "#giris-salteri", bag: fill(P.goTo, { name: N.entry }) }
-    : { k: "giris", durum: "bilgi", cumle: P.entryOff, href: "#giris-salteri", bag: fill(P.goTo, { name: N.entry }) });
-  rows.push(!cap.ok ? { k: "sermaye", durum: "bilgi", cumle: P.capitalUnreadable }
-    : cap.capital === null ? { k: "sermaye", durum: "bilgi", cumle: P.capitalNone }
-    : { k: "sermaye", durum: "bilgi", cumle: fill(P.capitalSome, { amount: cap.quoteAsset === "USDT" || cap.quoteAsset === null ? fmt.usdt(cap.capital) : `${fmt.usdt(cap.capital).replace(/ USDT$/, "")} ${cap.quoteAsset}`, date: cap.periodStart ? fmt.date(cap.periodStart) : P.capitalDateUnknown }) });
+  rows.push(!a.giris?.ok ? { k: "giris", durum: "bilgi", cumle: P.entryUnreadable, kisa: kisa(N.entry, B.unreadable), href: "#giris-salteri", bag: fill(P.goTo, { name: N.entry }) }
+    : a.giris.enabled ? { k: "giris", durum: "bilgi", cumle: P.entryOn, kisa: kisa(N.entry, T.common.on), href: "#giris-salteri", bag: fill(P.goTo, { name: N.entry }) }
+    : { k: "giris", durum: "bilgi", cumle: P.entryOff, kisa: kisa(N.entry, T.common.off), href: "#giris-salteri", bag: fill(P.goTo, { name: N.entry }) });
+  const tutar = cap.ok && cap.capital !== null ? (cap.quoteAsset === "USDT" || cap.quoteAsset === null ? fmt.usdt(cap.capital) : `${fmt.usdt(cap.capital).replace(/ USDT$/, "")} ${cap.quoteAsset}`) : "", tarih = cap.ok && cap.periodStart ? fmt.date(cap.periodStart) : P.capitalDateUnknown;
+  rows.push(!cap.ok ? { k: "sermaye", durum: "bilgi", cumle: P.capitalUnreadable, kisa: kisa(N.capital, B.unreadable) }
+    : cap.capital === null ? { k: "sermaye", durum: "bilgi", cumle: P.capitalNone, kisa: kisa(N.capital, B.notMeasured) }
+    : { k: "sermaye", durum: "bilgi", cumle: fill(P.capitalSome, { amount: tutar, date: tarih }), kisa: kisa(N.capital, fill(B.capitalValue, { amount: tutar, date: tarih })) });
   return rows;
 }
 const KOSUL_ISARETI: Record<Kosul["durum"], { im: string; renk: string }> = { tamam: { im: "✓", renk: "#78e0a8" }, eksik: { im: "✗", renk: "#ff8a7a" }, bilinmiyor: { im: "?", renk: "#ffd479" }, bilgi: { im: "•", renk: "#8ec9ff" } };
@@ -532,25 +547,26 @@ function MotorDurumKarti({ view, kosullar, yenile, capayaGit }: { view: PanelVie
   const alan: React.CSSProperties = { display: "block", width: "100%", maxWidth: 320, minHeight: DOKUN, boxSizing: "border-box", padding: ".7rem .8rem", fontSize: "1rem", background: "#141419", color: "#e8e8ea", border: "1px solid #33333c", borderRadius: 6 };
   return (
     <section id="motor-durum" data-hal={hal} aria-label={E.label} style={{ ...box(e.ton), padding: "1.1rem 1.2rem", margin: "0 0 1rem" }}>
-      <p style={{ margin: 0, fontSize: ".8rem", letterSpacing: ".08em", color: "#b4b4bb" }}>{E.label}</p>
-      <p id="motor-durum-etiket" style={{ margin: ".15rem 0 .35rem", fontSize: "2rem", fontWeight: 700, color: TONE[e.ton].bd }}>{e.ad}</p>
-      <p style={{ margin: ".3rem 0 .8rem", lineHeight: 1.55 }}>{e.cumle}</p>
+      <p data-satir="ad" style={{ margin: 0, fontSize: ".8rem", letterSpacing: ".08em", color: "#b4b4bb" }}>{E.label}</p>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: ".5rem", margin: "0 0 .6rem" }}><p id="motor-durum-etiket" data-satir="durum" style={{ margin: ".15rem 0 .35rem", fontSize: "2rem", fontWeight: 700, color: TONE[e.ton].bd }}>{e.ad}</p>
+        <BilgiModali kimlik="motor-durum" metin={{ baslik: e.ad, acEtiketi: fill(T.info.open, { name: E.label }), kapatEtiketi: T.info.close, satirlar: [e.cumle, `${E.stopPageLink} ${E.stopPageText}`] }} /></div>
       {baslatilabilir && !baslatAcik && <button id="baslat-dugme" type="button" onClick={() => { setSonuc(null); setBaslatAcik(true); }} style={buyuk("#0d2a16", "#78e0a8", "#e8e8ea", true)}>{E.start}</button>}
       {baslatAcik && baslatilabilir && (<div style={{ borderTop: "1px solid #23232a", paddingTop: ".6rem" }}><label htmlFor="baslat-kod" style={{ display: "block", margin: "0 0 .3rem", color: "#b4b4bb" }}>{E.codeLabel}</label>
         <input id="baslat-kod" value={baslatKod} onChange={(x) => setBaslatKod(x.target.value)} inputMode="numeric" maxLength={6} autoComplete="one-time-code" disabled={gonderiliyor} style={{ ...alan, width: "9rem" }} />
         <p style={{ display: "flex", flexWrap: "wrap", gap: ".6rem", margin: ".7rem 0 0" }}><button id="baslat-gonder" type="button" onClick={() => void baslat()} disabled={!/^\d{6}$/.test(baslatKod) || gonderiliyor} style={buyuk("#0d2a16", "#78e0a8", "#e8e8ea", /^\d{6}$/.test(baslatKod) && !gonderiliyor)}>{gonderiliyor ? E.starting : E.startEngine}</button>
           <button type="button" onClick={() => { setBaslatAcik(false); setBaslatKod(""); }} style={dugme(true)}>{T.common.cancel}</button></p></div>)}
-      {durmus && !baslatilabilir && <div id="onkosul-eksik" style={{ margin: ".2rem 0 .4rem" }}><p style={{ margin: ".3rem 0", lineHeight: 1.55, fontWeight: 600 }}>{E.blockedTitle}</p>
+      {durmus && !baslatilabilir && <div id="onkosul-eksik" style={{ margin: ".2rem 0 .4rem" }}><p data-satir="durum" style={{ margin: ".3rem 0", lineHeight: 1.55, fontWeight: 600 }}>{T.brief.doFirst}</p>
         <ul style={{ margin: ".2rem 0", paddingLeft: "1.2rem", lineHeight: 1.7 }}>{engel.map((k) => <li key={k.k}><a href={k.href} onClick={() => capayaGit((k.href ?? "").slice(1))} style={{ color: "#8ec9ff", display: "inline-flex", alignItems: "center", minHeight: DOKUN }}>{k.bag}</a></li>)}</ul></div>}
       {durdurulabilir && !durdurAcik && <button id="durdur-dugme" type="button" onClick={() => { setSonuc(null); setDurdurAcik(true); }} style={buyuk("#ff8a7a", "#ff8a7a", "#1a0505", true)}>{E.stop}</button>}
       {durdurAcik && <DurdurFormu bitti={async (x, kabul) => { setSonuc(x); if (kabul) setDurdurAcik(false); await yenile(); }} vazgec={() => setDurdurAcik(false)} />}
       <div id="motor-sonuc" role="status" aria-live="polite">{sonuc !== null && <p style={{ ...box(sonuc.ton), lineHeight: 1.55 }}>{sonuc.metin}</p>}</div>
-      <p style={{ margin: ".8rem 0 .2rem", lineHeight: 1.55 }}><a href="/durdur" style={{ color: "#ff8a7a", fontWeight: 700 }}>{E.stopPageLink}</a> {E.stopPageText}</p>
-      <h3 style={{ fontSize: "1rem", margin: "1rem 0 .3rem" }}>{E.beforeYouStart}</h3>
+      <p style={{ margin: ".8rem 0 .2rem", lineHeight: 1.55 }}><a href="/durdur" style={{ color: "#ff8a7a", fontWeight: 700, display: "inline-flex", alignItems: "center", minHeight: DOKUN }}>{E.stopPageLink}</a></p>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: ".5rem", margin: "1rem 0 .3rem" }}><h3 style={{ fontSize: "1rem", margin: 0 }}>{E.beforeYouStart}</h3>
+        <BilgiModali kimlik="on-kosullar" metin={{ baslik: E.beforeYouStart, acEtiketi: fill(T.info.open, { name: E.beforeYouStart }), kapatEtiketi: T.info.close, satirlar: [E.blockedTitle, ...kosullar.map((k) => k.cumle)] }} /></div>
       <ul id="on-kosullar" style={{ listStyle: "none", padding: 0, margin: 0 }}>{kosullar.map((k) => (
         <li key={k.k} data-kosul={k.k} data-durum={k.durum} style={{ display: "flex", gap: ".55rem", padding: ".35rem 0", borderTop: "1px solid #23232a", lineHeight: 1.5 }}>
           <span aria-hidden="true" style={{ color: KOSUL_ISARETI[k.durum].renk, fontWeight: 700, minWidth: "1rem" }}>{KOSUL_ISARETI[k.durum].im}</span>
-          <span>{k.cumle}{k.href && k.durum !== "tamam" ? <> <a href={k.href} onClick={() => capayaGit((k.href ?? "").slice(1))} style={{ color: "#8ec9ff" }}>{k.bag}</a></> : null}</span></li>))}</ul>
+          <span><span data-satir="durum">{k.kisa}</span>{k.href && k.durum !== "tamam" ? <> <a href={k.href} onClick={() => capayaGit((k.href ?? "").slice(1))} style={{ color: "#8ec9ff" }}>{k.bag}</a></> : null}</span></li>))}</ul>
     </section>
   );
 }
@@ -579,22 +595,30 @@ function uyariMetni(c: Card): { baslik: string; metin: string } {
 }
 function UyariSatiri({ c }: { c: Card }) {
   const m = uyariMetni(c);
-  return (<section style={box(c.level)} aria-label={m.baslik}><h3 style={{ margin: "0 0 .35rem", fontSize: "1rem" }}><span style={{ fontSize: ".72rem", letterSpacing: ".08em", color: TONE[c.level].bd, marginRight: ".5rem" }}>{T.technical.levels[c.level]}</span>{m.baslik}</h3>
-    <p style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{m.metin}</p></section>);
+  // Tur 88 (G37): uyarının başlığı (durum) sayfada; ne olduğu ve ne yapılacağı (i) modalında.
+  return (<section style={box(c.level)} aria-label={m.baslik}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: ".5rem" }}><h3 style={{ margin: 0, fontSize: "1rem" }}><span style={{ fontSize: ".72rem", letterSpacing: ".08em", color: TONE[c.level].bd, marginRight: ".5rem" }}>{T.technical.levels[c.level]}</span>{m.baslik}</h3>
+    <BilgiModali kimlik={`uyari-${c.code ?? "diger"}`} metin={{ baslik: m.baslik, acEtiketi: fill(T.info.open, { name: m.baslik }), kapatEtiketi: T.info.close, satirlar: [m.metin] }} /></div></section>);
 }
 /** Kayıtlı sebep kodunun sade adı (sözlük); sözlükte yoksa kod GÖSTERİLMEZ. */
 const sebepAdi = (code: string | null) => (code === null ? T.reasons.none : (T.reasons as Record<string, string>)[code] ?? T.reasons.other);
 /** DURUM SEKMESİ ÖZETİ ("bir bakışta"): yalnız yapılandırılmış özet alanlarından. */
 function DurumOzeti({ v, simdi }: { v: PanelView; simdi: number }) {
-  const s = v.summary, S = T.status, satirlar: string[] = [];
-  satirlar.push(!s.tick.read ? S.lastRunUnreadable : s.tick.at === null ? S.lastRunNone : fill(S.lastRun, { at: anTr(s.tick.at), ago: fmt.ago(s.tick.at, simdi) }));
-  if (s.tick.read && s.tick.late === true) satirlar.push(S.late);
-  satirlar.push(s.openPositions === null ? S.positionsUnreadable : fill(S.positions, { n: s.openPositions }));
-  if (s.health === null) satirlar.push(S.healthUnreadable);
-  else { satirlar.push((S.health as Record<string, string>)[s.health.state] ?? S.health.UNKNOWN); satirlar.push(fill(S.feesPaid, { period: s.health.period, amount: fmt.usdt(s.health.feesUsdt) })); }
-  return (<section style={box("INFO")} aria-label={S.summaryHeading}><h2 style={{ fontSize: "1.05rem", margin: "0 0 .4rem" }}>{S.summaryHeading}</h2>
-    {satirlar.map((l, i) => <p key={i} style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{l}</p>)}
-    <p style={{ margin: ".4rem 0 0", color: "#9a9aa2" }}>{fill(S.reloaded, { at: anTr(v.at) })}</p></section>);
+  const s = v.summary, S = T.status, B = T.brief, uzun: string[] = [], kisaSatir: string[] = [];
+  // Tur 88 (G37): sayfada KISA satırlar (ad: değer); aynı bilginin uzun cümlesi "At a glance" başlığının (i) modalında.
+  uzun.push(!s.tick.read ? S.lastRunUnreadable : s.tick.at === null ? S.lastRunNone : fill(S.lastRun, { at: anTr(s.tick.at), ago: fmt.ago(s.tick.at, simdi) }));
+  kisaSatir.push(!s.tick.read ? B.lastRunUnreadable : s.tick.at === null ? B.lastRunNone : fill(s.tick.late === true ? B.lastRunLate : B.lastRun, { ago: fmt.ago(s.tick.at, simdi) }));
+  if (s.tick.read && s.tick.late === true) uzun.push(S.late);
+  const poz = s.openPositions === null ? S.positionsUnreadable : fill(S.positions, { n: s.openPositions }); uzun.push(poz); kisaSatir.push(poz);
+  if (s.health === null) { uzun.push(S.healthUnreadable); kisaSatir.push(B.healthUnreadable); }
+  else { uzun.push((S.health as Record<string, string>)[s.health.state] ?? S.health.UNKNOWN); kisaSatir.push((B.health as Record<string, string>)[s.health.state] ?? B.health.UNKNOWN);
+    uzun.push(fill(S.feesPaid, { period: s.health.period, amount: fmt.usdt(s.health.feesUsdt) })); kisaSatir.push(fill(B.fees, { amount: fmt.usdt(s.health.feesUsdt) })); }
+  // G37 kutu 7 (S15-4): ödenen/alınan funding USDT ile AYRI satır; kayıt yoksa "kayıt yok" (çıplak 0 yazılmaz); okunamazsa "okunamadı".
+  const f = s.funding, fundingSatir = !f.read ? [B.fundingUnreadable] : f.records === 0 ? [B.fundingNone] : [fill(B.fundingPaid, { amount: fmt.usdt(f.paidUsdt) }), fill(B.fundingReceived, { amount: fmt.usdt(f.receivedUsdt) })];
+  uzun.push(S.fundingInfo);
+  return (<section style={box("INFO")} aria-label={S.summaryHeading}><Baslik ad={S.summaryHeading} kimlik="bir-bakista" ust="0" satirlar={uzun} />
+    {kisaSatir.map((l, i) => <p key={i} data-satir="durum" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{l}</p>)}
+    {fundingSatir.map((l, i) => <p key={`f${i}`} data-satir="durum" data-funding={!f.read ? "okunamadi" : f.records === 0 ? "yok" : i === 0 ? "odendi" : "alindi"} style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{l}</p>)}
+    <p data-satir="durum" style={{ margin: ".4rem 0 0", color: "#9a9aa2" }}>{fill(S.reloaded, { at: anTr(v.at) })}</p></section>);
 }
 /** GEÇMİŞ SEKMESİ: pozisyonlar ve ayar değişiklikleri sade satırlarla — MEVCUT veriden (yeni sorgu/uç YOK). */
 function GecmisSekmesi({ v, settings, risk, paylar }: { v: PanelView; settings: Settings | null; risk: RiskView | null; paylar: SharesView | null }) {
@@ -604,22 +628,21 @@ function GecmisSekmesi({ v, settings, risk, paylar }: { v: PanelView; settings: 
     ? fill(H.open, { symbol: p.symbol, opened: `${anTr(p.openedAt)} (${fmt.ago(p.openedAt, simdi)})`, qty: p.facts.quantity, entry: fmt.usdt(p.facts.entryPrice), notional: fmt.usdt(p.facts.notionalUsdt), fee: fmt.usdt(p.facts.feeUsdt),
         pnl: p.facts.grossUsdt === null ? H.openPnlUnknown : fill(H.openPnl, { gross: para(p.facts.grossUsdt), net: para(p.facts.netUsdt) }) })
     : fill(H.closed, { symbol: p.symbol, closed: p.closedAt === null ? H.closedUnknownTime : anTr(p.closedAt), opened: anTr(p.openedAt), gross: para(p.facts.grossUsdt), fee: fmt.usdt(p.facts.feeUsdt), net: para(p.facts.netUsdt), reason: sebepAdi(p.reasonCode) });
-  const PAY_ADI = payAdi(), alanAdi: Record<string, string> = { ...(T.cap.fieldNames as Record<string, string>), ...(T.brain.fieldNames as Record<string, string>), ...riskAdi(), ...PAY_ADI, tickMs: T.prereq.names.tick };
-  const degerYaz = (f: string, x: string | null) => (x === null ? T.common.nowUnset : f === "callIntervalMs" || f === "tickMs" ? fmt.every(Number(x)) : PAY_ADI[f] ? yuzde(x) : defterDegeri(f, x));
+  const PAY_ADI = payAdi(), alanAdi: Record<string, string> = { ...(T.cap.fieldNames as Record<string, string>), ...(T.brain.fieldNames as Record<string, string>), ...riskAdi(), ...PAY_ADI, tickMs: T.prereq.names.tick, preset: T.preset.fieldName };
+  const degerYaz = (f: string, x: string | null) => (x === null ? T.common.nowUnset : f === "callIntervalMs" || f === "tickMs" ? fmt.every(Number(x)) : PAY_ADI[f] ? yuzde(x) : f === "preset" ? ((T.preset.names as Record<string, string>)[x] ?? x) : defterDegeri(f, x));
   const degisiklikler = [...(settings?.changes ?? []).map((c) => ({ ...c, grup: H.brainGroup })), ...(risk?.ok ? risk.changes ?? [] : []).map((c) => ({ ...c, grup: H.riskGroup })), ...(paylar?.ok ? paylar.changes ?? [] : []).map((c) => ({ ...c, grup: T.caps.historyGroup }))]
     .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   const ls = v.summary.lastStop, sonOlay = !ls.read ? T.common.unknown : ls.at === null ? H.lastStopNone : fill(H.lastStop, { at: anTr(ls.at), title: sebepAdi(ls.code) });
   return (<div>
-    <p style={{ color: "#9a9aa2", margin: "0 0 .6rem" }}>{H.intro}</p>
-    <h2 style={{ fontSize: "1.05rem", marginTop: ".6rem" }}>{H.lastStopHeading}</h2>
-    <p style={{ lineHeight: 1.55 }}>{sonOlay}</p>
+    <Baslik ad={H.lastStopHeading} kimlik="gecmis" ust=".6rem" satirlar={[H.intro]} />
+    <p data-satir="kayit" style={{ lineHeight: 1.55 }}>{sonOlay}</p>
     <h2 style={{ fontSize: "1.05rem", marginTop: "1rem" }}>{H.positionsHeading}</h2>
-    {v.summary.openPositions === null ? <p style={{ lineHeight: 1.55 }}>{H.positionsUnreadable}</p>
-      : v.positions.rows.length === 0 ? <p style={{ lineHeight: 1.55 }}>{H.positionsNone}</p>
-      : <ul data-gecmis-pozisyon style={{ listStyle: "none", padding: 0, margin: 0 }}>{v.positions.rows.map((p) => <li key={p.id} style={{ padding: ".45rem 0", borderTop: "1px solid #23232a", lineHeight: 1.55 }}>{pozisyon(p)}</li>)}</ul>}
+    {v.summary.openPositions === null ? <p data-satir="durum" style={{ lineHeight: 1.55 }}>{H.positionsUnreadable}</p>
+      : v.positions.rows.length === 0 ? <p data-satir="kayit" style={{ lineHeight: 1.55 }}>{H.positionsNone}</p>
+      : <ul data-gecmis-pozisyon style={{ listStyle: "none", padding: 0, margin: 0 }}>{v.positions.rows.map((p) => <li key={p.id} data-satir="kayit" style={{ padding: ".45rem 0", borderTop: "1px solid #23232a", lineHeight: 1.55 }}>{pozisyon(p)}</li>)}</ul>}
     <h2 style={{ fontSize: "1.05rem", marginTop: "1rem" }}>{H.changesHeading}</h2>
-    {degisiklikler.length === 0 ? <p style={{ lineHeight: 1.55 }}>{H.changesNone}</p>
-      : <ul data-gecmis-ayar style={{ listStyle: "none", padding: 0, margin: 0 }}>{degisiklikler.map((c, i) => <li key={i} style={{ padding: ".45rem 0", borderTop: "1px solid #23232a", lineHeight: 1.55 }}>
+    {degisiklikler.length === 0 ? <p data-satir="kayit" style={{ lineHeight: 1.55 }}>{H.changesNone}</p>
+      : <ul data-gecmis-ayar style={{ listStyle: "none", padding: 0, margin: 0 }}>{degisiklikler.map((c, i) => <li key={i} data-satir="kayit" style={{ padding: ".45rem 0", borderTop: "1px solid #23232a", lineHeight: 1.55 }}>
         {fill(H.change, { at: anTr(c.at), by: kimAdi(c.by), what: c.grup, changes: c.changes.map((x) => `${alanAdi[x.field] ?? T.history.unknownField}: ${x.from === null ? T.common.wasUnset : degerYaz(x.field, x.from)} → ${degerYaz(x.field, x.to)}`).join(" · ") })}</li>)}</ul>}
   </div>);
 }
@@ -845,7 +868,9 @@ export default function Panel() {
       <div style={{ maxWidth: 860, margin: "0 auto" }}>
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: ".5rem" }}><h1 style={{ fontSize: "1.35rem" }}>{T.panel.title}</h1><LangSelect id="dil-giris" /></div>
         <p style={{ margin: "0 0 .6rem" }}><a href="/durdur" style={{ color: "#ff8a7a", fontWeight: 700 }}>{T.panel.stopLink}</a> {T.panel.stopLinkHint}</p>
-        <p style={{ lineHeight: 1.6 }}>{state === "yükleniyor" ? T.panel.loading : state === "oturumsuz" ? T.panel.needsSession : T.panel.unreachable}</p>
+        {state === "oturumsuz" ? <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: ".5rem" }}><p data-satir="durum" style={{ lineHeight: 1.6 }}>{T.login.form}</p>
+          <BilgiModali kimlik="giris" metin={{ baslik: T.login.form, acEtiketi: fill(T.info.open, { name: T.login.form }), kapatEtiketi: T.info.close, satirlar: [T.panel.needsSession] }} /></div>
+          : <p role="status" style={{ lineHeight: 1.6 }}>{state === "yükleniyor" ? T.panel.loading : T.panel.unreachable}</p>}
         {state === "oturumsuz" && <GirisFormu girdi={girdi} not={cikisNot} />}
       </div>
     </main>
@@ -875,16 +900,13 @@ export default function Panel() {
 
         {/* ---- SETTINGS ---- */}
         <div role="tabpanel" id="sekme-settings" aria-labelledby="sekme-dugme-settings" hidden={sekme !== "settings"} style={panelGorunur("settings")}>
-          <h2 style={{ fontSize: "1.05rem", marginTop: ".4rem" }}>{T.key.heading}</h2>
-          <p data-ne-yapar style={NE}>{T.key.what}</p>
+          <HazirProfil yenile={load} />
           <AnahtarYuzeyi durum={anahtar} yenile={load} />
 
-          <h2 id="tik-araligi" style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>{T.tick.heading}</h2>
-          <p data-ne-yapar style={NE}>{T.tick.what}</p>
+          <Baslik id="tik-araligi" ad={T.tick.heading} kimlik="tik" data-ne-yapar satirlar={[T.tick.what, !settings?.ok || !settings.tickView ? T.tick.unreadable : settings.tickView.tickMs === null ? T.tick.empty : fill(T.tick.current, { every: fmt.every(settings.tickView.tickMs) }), T.tick.effect]} />
           <section style={box(settings?.ok && settings.tickView ? (settings.tickView.tickMs === null ? "WARN" : "INFO") : "WARN")} aria-label={T.tick.heading}>
-            {!settings?.ok || !settings.tickView ? <p style={{ lineHeight: 1.55 }}>{T.tick.unreadable}</p> : <>
-              <p data-tik-ayar style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{settings.tickView.tickMs === null ? T.tick.empty : fill(T.tick.current, { every: fmt.every(settings.tickView.tickMs) })}</p>
-              <p style={{ margin: ".3rem 0", lineHeight: 1.55, color: "#9a9aa2" }}>{T.tick.effect}</p>
+            {!settings?.ok || !settings.tickView ? <p data-satir="durum" style={{ lineHeight: 1.55 }}>{fill(T.brief.row, { name: T.prereq.names.tick, value: T.brief.unreadable })}</p> : <>
+              <p data-tik-ayar data-satir="deger" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{fill(T.brief.row, { name: T.prereq.names.tick, value: settings.tickView.tickMs === null ? T.brief.notChosen : fmt.every(settings.tickView.tickMs) })}</p>
               <details style={{ marginTop: ".6rem" }}>
                 <summary style={{ cursor: "pointer", minHeight: DOKUN, display: "flex", alignItems: "center" }}>{T.tick.change}</summary>
                 <div role="radiogroup" aria-label={T.tick.choicesAria} style={{ display: "flex", flexWrap: "wrap", gap: ".5rem", margin: ".4rem 0" }}>{settings.tickView.choices.map((c) => (
@@ -900,17 +922,17 @@ export default function Panel() {
             </>}
           </section>
 
-          <h2 id="maliyet-tavani" style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>{T.cap.heading}</h2>
-          <p data-ne-yapar style={NE}>{T.cap.what}</p>
+          <Baslik id="maliyet-tavani" ad={T.cap.heading} kimlik="tavan" data-ne-yapar satirlar={[T.cap.what, ...(settings?.ok && settings.costCap ? [settings.costCap.infraUsd === null ? T.cap.infraEmpty : fill(T.cap.infra, { value: fmt.usdMonth(settings.costCap.infraUsd) }),
+            settings.costCap.brainMonthlyUsd === null ? T.cap.brainDerived : fill(T.cap.brain, { value: fmt.usdMonth(settings.costCap.brainMonthlyUsd) }), settings.costCap.behavior === "NO_LIMIT" ? T.cap.behaviorNoLimit : T.cap.behaviorOff, settings.capEmpty ? T.cap.notCalledNow : T.cap.calledNow] : [T.cap.unreadable]), T.cap.changeHelp, T.cap.effect]} />
           <section style={box(settings?.ok && settings.costCap ? (settings.costCap.brainMonthlyUsd === null ? "WARN" : "INFO") : "WARN")} aria-label={T.cap.heading}>
-            {!settings?.ok || !settings.costCap ? <p style={{ lineHeight: 1.55 }}>{T.cap.unreadable}</p> : <>
-              <p data-tavan style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{[settings.costCap.totalUsd === null ? T.cap.totalEmpty : fill(T.cap.total, { value: fmt.usdMonth(settings.costCap.totalUsd) }),
-                settings.costCap.infraUsd === null ? T.cap.infraEmpty : fill(T.cap.infra, { value: fmt.usdMonth(settings.costCap.infraUsd) }),
-                settings.costCap.brainMonthlyUsd === null ? T.cap.brainDerived : fill(T.cap.brain, { value: fmt.usdMonth(settings.costCap.brainMonthlyUsd) })].join(" ")}</p>
-              <p style={{ margin: ".3rem 0", lineHeight: 1.55, color: "#9a9aa2" }}>{settings.costCap.behavior === "NO_LIMIT" ? T.cap.behaviorNoLimit : T.cap.behaviorOff} {settings.capEmpty ? T.cap.notCalledNow : T.cap.calledNow}</p>
+            {!settings?.ok || !settings.costCap ? <p data-satir="durum" style={{ lineHeight: 1.55 }}>{fill(T.brief.row, { name: T.cap.heading, value: T.brief.unreadable })}</p> : <>
+              <p data-tavan data-satir="deger" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{fill(T.brief.capTotal, { value: settings.costCap.totalUsd === null ? T.brief.empty : fmt.usdMonth(settings.costCap.totalUsd) })}</p>
+              <p data-satir="deger" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{fill(T.brief.capInfra, { value: settings.costCap.infraUsd === null ? T.brief.notEntered : fmt.usdMonth(settings.costCap.infraUsd) })}</p>
+              <p data-satir="deger" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{fill(T.brief.capBrain, { value: settings.costCap.brainMonthlyUsd === null ? T.brief.derived : fmt.usdMonth(settings.costCap.brainMonthlyUsd) })}</p>
+              <p data-satir="deger" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{settings.costCap.behavior === "NO_LIMIT" ? T.brief.capIfEmptyNoLimit : T.brief.capIfEmptyOff}</p>
+              <p data-satir="durum" style={{ margin: ".3rem 0", lineHeight: 1.55, color: "#b4b4bb" }}>{settings.capEmpty ? T.brief.engineIdle : T.brief.engineCalled}</p>
               <details style={{ marginTop: ".6rem" }}>
                 <summary style={{ cursor: "pointer", minHeight: DOKUN, display: "flex", alignItems: "center" }}>{T.cap.change}</summary>
-                <p style={{ margin: ".4rem 0", lineHeight: 1.55, color: "#9a9aa2" }}>{T.cap.changeHelp}</p>
                 <div style={{ borderTop: "1px solid #23232a", padding: ".5rem 0" }}>
                   <label style={secimEtiketi}><input type="checkbox" checked={capSecili.tavan} onChange={(e) => setCapSecili({ ...capSecili, tavan: e.target.checked })} aria-label={T.cap.fieldTotalAria} /><span>{T.cap.fieldTotal}</span></label>
                   {capSecili.tavan && <label htmlFor="tavan-deger" style={{ display: "block", margin: ".35rem 0 .2rem", color: "#9a9aa2" }}>{T.cap.fieldTotalNew}</label>}
@@ -942,15 +964,16 @@ export default function Panel() {
             </>}
           </section>
 
-          <h2 id="karar-motoru" style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>{T.brain.heading}</h2>
-          <p data-ne-yapar style={NE}>{T.brain.what}</p>
+          <Baslik id="karar-motoru" ad={T.brain.heading} kimlik="karar-motoru" data-ne-yapar satirlar={[T.brain.what, ...(!settings?.ok || !settings.settings || !settings.allowed ? [T.brain.unreadable] : [settings.capEmpty ? T.brain.idle : null,
+            fill(settings.capEmpty ? T.brain.saved : T.brain.current, { model: settings.settings.model, every: fmt.every(settings.settings.callIntervalMs), candidates: settings.settings.candidates, candles: settings.settings.candleLimit })]), T.brain.changeHelp, T.brain.effect]} />
           <section style={box(settings?.ok && settings.settings ? "INFO" : "WARN")} aria-label={T.brain.heading}>
-            {!settings?.ok || !settings.settings || !settings.allowed ? <p style={{ lineHeight: 1.55 }}>{T.brain.unreadable}</p> : <>
-              {settings.capEmpty && <p data-tavan-bos-ayar style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{T.brain.idle}</p>}
-              <p data-beyin-ayar style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{fill(settings.capEmpty ? T.brain.saved : T.brain.current, { model: settings.settings.model, every: fmt.every(settings.settings.callIntervalMs), candidates: settings.settings.candidates, candles: settings.settings.candleLimit })}</p>
+            {!settings?.ok || !settings.settings || !settings.allowed ? <p data-satir="durum" style={{ lineHeight: 1.55 }}>{fill(T.brief.model, { value: T.brief.unreadable })}</p> : <>
+              {settings.capEmpty && <p data-tavan-bos-ayar data-satir="durum" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{T.brief.engineIdle}</p>}
+              <p data-beyin-ayar data-satir="deger" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{fill(T.brief.model, { value: settings.settings.model })}</p>
+              <p data-satir="deger" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{fill(T.brief.calls, { value: fmt.every(settings.settings.callIntervalMs) })}</p>
+              <p data-satir="deger" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{fill(T.brief.candidates, { n: settings.settings.candidates, m: settings.settings.candleLimit })}</p>
               <details style={{ marginTop: ".6rem" }}>
                 <summary style={{ cursor: "pointer", minHeight: DOKUN, display: "flex", alignItems: "center" }}>{T.brain.change}</summary>
-                <p style={{ margin: ".4rem 0", lineHeight: 1.55, color: "#9a9aa2" }}>{T.brain.changeHelp}</p>
                 <div style={{ borderTop: "1px solid #23232a", padding: ".5rem 0" }}>
                   <label style={secimEtiketi}><input type="checkbox" checked={bSecili.model} onChange={(e) => setBSecili({ ...bSecili, model: e.target.checked })} aria-label={T.brain.fieldModelAria} /><span>{T.brain.fieldModel}</span></label>
                   {bSecili.model && <select aria-label={T.brain.fieldModelNew} value={bDeger.model} onChange={(e) => setBDeger({ ...bDeger, model: e.target.value })} style={alanStili}><option value="">{T.common.choose}</option>{settings.allowed.models.map((m) => <option key={m} value={m}>{m}</option>)}</select>}
@@ -976,17 +999,16 @@ export default function Panel() {
             </>}
           </section>
 
-          <h2 style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>{T.options.heading}</h2>
+          <Baslik ad={T.options.heading} kimlik="secenekler" satirlar={!settings?.ok ? [T.options.unreadable] : settings.capEmpty ? [T.options.idle] : [settings.runtime ? fill(T.options.runtime, { model: settings.runtime.model, every: fmt.every(settings.runtime.callIntervalMs), candidates: settings.runtime.candidates, candles: settings.runtime.candleLimit }) : T.common.unknown,
+            fill(T.options.capLine, { cap: settings.cap?.monthlyUsd == null ? T.options.capNone : fmt.usdMonth(settings.cap.monthlyUsd), calls: settings.cap?.dailyCalls ?? T.common.unknown }), T.options.choicesHead]} />
           <section style={box(settings?.ok ? "INFO" : "WARN")} aria-label={T.options.heading}>
-            {!settings?.ok ? <p style={{ lineHeight: 1.55 }}>{T.options.unreadable}</p>
-            : settings.capEmpty ? <p data-tavan-bos style={{ lineHeight: 1.55 }}>{T.options.idle}</p> : <>
-              <p style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{settings.runtime ? fill(T.options.runtime, { model: settings.runtime.model, every: fmt.every(settings.runtime.callIntervalMs), candidates: settings.runtime.candidates, candles: settings.runtime.candleLimit }) : T.common.unknown}</p>
-              <p style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{fill(T.options.capLine, { cap: settings.cap?.monthlyUsd == null ? T.options.capNone : fmt.usdMonth(settings.cap.monthlyUsd), calls: settings.cap?.dailyCalls ?? T.common.unknown })}</p>
-              {settings.price?.stale && <p style={{ margin: ".3rem 0", lineHeight: 1.55, color: TONE.WARN.bd }}>{T.options.priceStale}</p>}
+            {!settings?.ok ? <p data-satir="durum" style={{ lineHeight: 1.55 }}>{fill(T.brief.row, { name: T.options.heading, value: T.brief.unreadable })}</p>
+            : settings.capEmpty ? <p data-tavan-bos data-satir="durum" style={{ lineHeight: 1.55 }}>{T.brief.optionsIdle}</p> : <>
+              <p data-satir="deger" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{fill(T.brief.capLine, { cap: settings.cap?.monthlyUsd == null ? T.brief.noLimit : fmt.usdMonth(settings.cap.monthlyUsd), calls: settings.cap?.dailyCalls ?? T.common.unknown })}</p>
+              {settings.price?.stale && <p data-satir="uyari" style={{ margin: ".3rem 0", lineHeight: 1.55, color: TONE.WARN.bd }}>{T.options.priceStale}</p>}
               {opts.length > 0 && <>
                 {/* Tur 49 madde 1 + Tur 70 madde 7c: satır düzeni (ortak ızgara + alt ızgara); sayı + birim BÖLÜNMEZ parça (nowrap). Yeni renk/boşluk/ölçü YOK. */}
                 <div role="radiogroup" aria-label={T.options.choicesAria} style={{ margin: ".7rem 0", fontSize: ".92rem", display: "grid", gridTemplateColumns: "repeat(3, minmax(min-content, max-content)) 1fr", columnGap: ".4rem" }}>
-                  <p style={{ color: "#9a9aa2", margin: "0 0 .35rem", gridColumn: "1 / -1" }}>{T.options.choicesHead}</p>
                   {opts.map((o) => { const id = `${o.model}|${o.intervalMs}`; return (
                     <label key={id} data-secenek style={{ display: "grid", gridTemplateColumns: "subgrid", gridColumn: "1 / -1", columnGap: ".4rem", padding: ".25rem .4rem", minHeight: DOKUN, alignItems: "center", borderTop: "1px solid #23232a", background: o.current ? "#14231a" : undefined, cursor: "pointer", lineHeight: 1.55 }}>
                       <span style={{ gridColumn: "1 / -1" }}><input type="radio" name="ayar" value={id} checked={pick === id} onChange={() => setPick(id)} aria-label={secenekCumlesi(o)} />{" "}
@@ -996,26 +1018,24 @@ export default function Panel() {
                       <span data-sutun="tavan">{o.underCap === null ? T.options.capUnknown : fill(o.underCap ? T.options.under : T.options.over, { cap: cc?.totalUsd ? fmt.usdMonth(cc.totalUsd) : T.common.unknown })}</span>
                     </label>); })}
                 </div>
-                <p style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{(() => { const o = opts.find((x) => `${x.model}|${x.intervalMs}` === pick); return o ? secenekCumlesi(o) : T.options.pick; })()}</p>
+                <p data-satir="geri" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{(() => { const o = opts.find((x) => `${x.model}|${x.intervalMs}` === pick); return o ? secenekCumlesi(o) : T.options.pick; })()}</p>
                 {kodGerek.secenek && <label style={{ ...kodEtiket, margin: ".5rem 0 .3rem" }}>{T.options.codeLabel}
                   <input id="secenek-kod" value={totp} onChange={(e) => setTotp(e.target.value)} inputMode="numeric" maxLength={6} autoComplete="one-time-code" style={{ ...alanStili, width: "7rem" }} />
                 </label>}
                 <button onClick={() => void apply()} disabled={!pick || (totp.length !== 0 && totp.length !== 6)} style={dugme(!!pick && (totp.length === 0 || totp.length === 6), true)}>{totp.length === 6 ? T.options.applyCode : T.options.applyFree}</button>
                 {applied !== null && <p role="status" aria-live="polite" style={{ margin: ".5rem 0", lineHeight: 1.55 }}>{applied}</p>}
               </>}
-              {sonDegisiklik && <p style={{ margin: ".4rem 0", lineHeight: 1.55, color: "#9a9aa2" }}>{fill(T.options.lastChange, { at: anTr(sonDegisiklik.at), by: kimAdi(sonDegisiklik.by), changes: degisenler(sonDegisiklik.changes, { ...(T.brain.fieldNames as Record<string, string>), ...(T.cap.fieldNames as Record<string, string>), tickMs: T.prereq.names.tick }) })}</p>}
+              {sonDegisiklik && <p data-satir="kayit" style={{ margin: ".4rem 0", lineHeight: 1.55, color: "#9a9aa2" }}>{fill(T.options.lastChange, { at: anTr(sonDegisiklik.at), by: kimAdi(sonDegisiklik.by), changes: degisenler(sonDegisiklik.changes, { ...(T.brain.fieldNames as Record<string, string>), ...(T.cap.fieldNames as Record<string, string>), tickMs: T.prereq.names.tick }) })}</p>}
               <TeknikAyrinti satirlar={[settings.spend?.sentence ?? settings.spend?.detail, settings.price?.note, settings.cap ? `${kaynakAdi(settings.cap.monthlyFrom)} · ${kaynakAdi(settings.cap.dailyFrom)}` : null, opts.length === 0 ? settings.options?.note : null, ...opts.map((o) => o.sentence), ...(settings.changes ?? []).map((c) => `${anTr(c.at)} · ${kimAdi(c.by)} · ${c.changes.map((x) => `${x.field}: ${x.from ?? T.common.wasUnset} → ${x.to ?? T.common.nowUnset}`).join(" · ")}`)]} />
             </>}
           </section>
 
-          <h2 id="risk-ayari" style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>{T.risk.heading}</h2>
-          <p data-ne-yapar style={NE}>{T.risk.what}</p>
+          <Baslik id="risk-ayari" ad={T.risk.heading} kimlik="risk-ayari" data-ne-yapar satirlar={riskAciklama(risk)} />
           <section style={box(risk?.ok ? (risk?.futures?.allowed ? "WARN" : "INFO") : "WARN")} aria-label={T.risk.heading}>
-            {!risk?.ok ? <p style={{ lineHeight: 1.55 }}>{T.risk.unreadable}</p> : <>
+            {!risk?.ok ? <p data-satir="durum" style={{ lineHeight: 1.55 }}>{fill(T.brief.row, { name: T.history.riskGroup, value: T.brief.unreadable })}</p> : <>
               <RiskOzeti r={risk} />
               <details style={{ marginTop: ".6rem" }}>
                 <summary style={{ cursor: "pointer", minHeight: DOKUN, display: "flex", alignItems: "center" }}>{T.risk.change}</summary>
-                <p style={{ margin: ".4rem 0", lineHeight: 1.55, color: "#9a9aa2" }}>{T.risk.changeHelp}</p>
                 {RISK_ALANLARI.map((f) => (
                   <div key={f.alan} style={{ borderTop: "1px solid #23232a", padding: ".5rem 0" }}>
                     <label style={secimEtiketi}>
@@ -1035,8 +1055,8 @@ export default function Panel() {
                         </select>
                       : <input id={`risk-deger-${f.alan}`} value={deger(f.alan)} onChange={(e) => setRiskDeger({ ...riskDeger, [f.alan]: e.target.value })} inputMode="decimal"
                           style={{ ...alanStili, width: "8rem" }} />)}
-                    {riskSecili[f.alan] && f.tip === "şalter" && !acikSunulur && <p style={{ margin: ".35rem 0 0", lineHeight: 1.5, color: "#9a9aa2" }}>{T.risk.noOpenOption}</p>}
-                    {riskSecili[f.alan] && f.tip === "kip" && <p style={{ margin: ".35rem 0 0", lineHeight: 1.5, color: "#9a9aa2" }}>{riskDeger[f.alan] ? `${fill(T.risk.pickedMode, { label: kipAdi(riskDeger[f.alan]), meaning: kipAnlami(riskDeger[f.alan]), todaySee: T.risk.modeTodaySee })} ${risk.allowed?.shortModeToday?.[riskDeger[f.alan]] ? fill(T.risk.modeToday, { today: risk.allowed.shortModeToday[riskDeger[f.alan]] }) : T.risk.modeNoToday}` : T.risk.pickMode}</p>}
+                    {riskSecili[f.alan] && f.tip === "şalter" && !acikSunulur && <p data-satir="geri" style={{ margin: ".35rem 0 0", lineHeight: 1.5, color: "#9a9aa2" }}>{T.risk.noOpenOption}</p>}
+                    {riskSecili[f.alan] && f.tip === "kip" && <p data-satir="geri" style={{ margin: ".35rem 0 0", lineHeight: 1.5, color: "#9a9aa2" }}>{riskDeger[f.alan] ? `${fill(T.risk.pickedMode, { label: kipAdi(riskDeger[f.alan]), meaning: kipAnlami(riskDeger[f.alan]), todaySee: T.risk.modeTodaySee })} ${risk.allowed?.shortModeToday?.[riskDeger[f.alan]] ? fill(T.risk.modeToday, { today: risk.allowed.shortModeToday[riskDeger[f.alan]] }) : T.risk.modeNoToday}` : T.risk.pickMode}</p>}
                   </div>))}
                 {RISK_ALANLARI.some((f) => riskSecili[f.alan]) && <label style={{ ...kodEtiket, margin: ".6rem 0 .3rem" }}>{T.risk.codeLabel}
                   <input id="risk-kod" value={riskTotp} onChange={(e) => setRiskTotp(e.target.value)} inputMode="numeric" maxLength={6} autoComplete="one-time-code" style={{ ...alanStili, width: "7rem" }} />
@@ -1049,13 +1069,12 @@ export default function Panel() {
             </>}
           </section>
 
-          <h2 id="risk-paylari" style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>{T.caps.heading}</h2>
-          <p data-ne-yapar style={NE}>{T.caps.what}</p>
+          <Baslik id="risk-paylari" ad={T.caps.heading} kimlik="risk-paylari" data-ne-yapar satirlar={[T.caps.what, T.caps.effect, T.caps.help]} />
           <section id="risk-paylari-ayar" style={box(v.riskCaps.ok && v.riskCaps.singlePct !== null && v.riskCaps.totalPct !== null ? "INFO" : "WARN")} aria-label={T.caps.heading}>
-            <p id="risk-paylari-deger" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{!v.riskCaps.ok ? T.caps.unreadable : fill(T.caps.value, { single: v.riskCaps.singlePct === null ? T.common.notSetUpper : yuzde(v.riskCaps.singlePct), total: v.riskCaps.totalPct === null ? T.common.notSetUpper : yuzde(v.riskCaps.totalPct) })}</p>
-            <p style={{ margin: ".3rem 0", lineHeight: 1.55, color: "#b4b4bb" }}>{T.caps.effect}</p>
-            {!v.riskCaps.ok ? <p style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{T.caps.formUnreadable}</p> : <div style={{ borderTop: "1px solid #23232a", paddingTop: ".5rem", marginTop: ".5rem" }}>
-              <p style={{ margin: ".3rem 0 .5rem", lineHeight: 1.55, color: "#b4b4bb" }}>{T.caps.help}</p>
+            <div id="risk-paylari-deger">{!v.riskCaps.ok ? <p data-satir="durum" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{fill(T.brief.row, { name: T.caps.historyGroup, value: T.brief.unreadable })}</p> : <>
+              <p data-satir="deger" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{fill(T.brief.row, { name: T.prereq.names.single, value: v.riskCaps.singlePct === null ? T.common.notSetUpper : yuzde(v.riskCaps.singlePct) })}</p>
+              <p data-satir="deger" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{fill(T.brief.row, { name: T.prereq.names.total, value: v.riskCaps.totalPct === null ? T.common.notSetUpper : yuzde(v.riskCaps.totalPct) })}</p></>}</div>
+            {!v.riskCaps.ok ? <p data-satir="uyari" style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{T.caps.formUnreadable}</p> : <div style={{ borderTop: "1px solid #23232a", paddingTop: ".5rem", marginTop: ".5rem" }}>
               <label htmlFor="pay-tek" style={{ display: "block", margin: ".5rem 0 .25rem", lineHeight: 1.45 }}>{T.caps.singleLabel} <span style={{ color: "#b4b4bb" }}>{fill(T.caps.current, { value: v.riskCaps.singlePct === null ? T.common.notSet : yuzde(v.riskCaps.singlePct) })}</span></label>
               <input id="pay-tek" value={payTek} onChange={(e) => setPayTek(e.target.value)} inputMode="decimal" autoComplete="off" disabled={payGonderiliyor} style={{ ...alanStili, width: "9rem" }} />
               <label htmlFor="pay-toplam" style={{ display: "block", margin: ".6rem 0 .25rem", lineHeight: 1.45 }}>{T.caps.totalLabel} <span style={{ color: "#b4b4bb" }}>{fill(T.caps.current, { value: v.riskCaps.totalPct === null ? T.common.notSet : yuzde(v.riskCaps.totalPct) })}</span></label>
@@ -1068,14 +1087,13 @@ export default function Panel() {
             <TeknikAyrinti satirlar={[T.technical.sharesStorage, ...(paylar?.ok ? (paylar.changes ?? []).map((c) => fill(T.technical.sharesChange, { at: anTr(c.at), by: kimAdi(c.by), changes: c.changes.map((x) => `${x.field}: ${x.from ?? T.common.wasUnset} → ${x.to ?? T.common.nowUnset}`).join(" · ") })) : [])]} />
           </section>
 
-          <h2 id="giris-salteri" style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>{T.entry.heading}</h2>
-          <p data-ne-yapar style={NE}>{T.entry.what}</p>
+          <Baslik id="giris-salteri" ad={T.entry.heading} kimlik="giris-salteri" data-ne-yapar satirlar={girisAciklama(giris)} />
           <GirisSalteriYuzeyi ayar={giris} yenile={load} />
 
-          <h2 id="bildirim-ayari" style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>{T.notify.heading}</h2>
+          <Baslik id="bildirim-ayari" ad={T.notify.heading} kimlik="bildirim" satirlar={bildirimAciklama(v.notifications)} />
           <BildirimDurumu n={v.notifications} />
 
-          <h2 id="kilit-ayari" style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>{T.lock.heading}</h2>
+          <Baslik id="kilit-ayari" ad={T.lock.heading} kimlik="kilit-ayari" satirlar={kilitAciklama(kilitAyar, dogrulayici)} />
           <KilitAyarYuzeyi ayar={kilitAyar} dogrulayiciVar={dogrulayici} yenile={kilitAyariniYenile} yer="panel" />
         </div>
 
@@ -1086,16 +1104,14 @@ export default function Panel() {
 
         {/* ---- TECHNICAL: eski panelin BÜTÜN ölçüm ayrıntısı (sunucunun kendi cümleleri) — silinmedi, taşındı ---- */}
         <div role="tabpanel" id="sekme-technical" aria-labelledby="sekme-dugme-technical" hidden={sekme !== "technical"} style={panelGorunur("technical")}>
-          <p style={{ color: "#9a9aa2", margin: "0 0 .6rem", lineHeight: 1.55 }}>{T.technical.intro}</p>
-          <p style={{ color: "#9a9aa2", margin: "0 0 1rem", lineHeight: 1.55 }}>{T.panel.measuredNote}</p>
           {v.alerts.length > 0 && <div><h2 style={{ fontSize: "1.05rem", marginTop: "1.2rem" }}>{T.technical.alertsHeading}</h2>{v.alerts.map((c, i) => <CardBlock key={i} c={c} head={T.technical.alertTag} />)}</div>}
-          <h2 style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>{T.technical.engineHeading}</h2>
+          <Baslik ad={T.technical.engineHeading} kimlik="teknik" ust={v.alerts.length > 0 ? "1.4rem" : "0"} satirlar={[T.technical.intro, T.panel.measuredNote]} />
           <CardBlock c={v.engine} /><CardBlock c={v.tick} /><CardBlock c={v.health} />
           <h2 style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>{T.technical.positionsHeading}</h2>
           <CardBlock c={v.positions.card} />
           {v.positions.rows.map((p) => <CardBlock key={p.id} c={{ level: p.level, title: p.title, lines: p.lines }} head={T.technical.positionTag} />)}
           <h2 style={{ fontSize: "1.05rem", marginTop: "1.4rem" }}>{T.technical.sourcesHeading}</h2>
-          <section style={box("INFO")}>{v.sources.map((s, i) => <p key={i} style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{s}</p>)}
+          <section data-satir="kayit" style={box("INFO")}>{v.sources.map((s, i) => <p key={i} style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{s}</p>)}
             <p style={{ margin: ".3rem 0", lineHeight: 1.55 }}>{fill(T.technical.filledAt, { at: anTr(v.at) })}</p>
             <button onClick={() => void load()} style={dugme(true)}>{T.technical.reload}</button>
           </section>

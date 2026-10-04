@@ -98,6 +98,11 @@ export const prismaSettingsStore = (client?: PrismaClient): SettingsStore => { c
   ]); },
   changes: async (n) => (await db().brainSettingChange.findMany({ orderBy: { at: "desc" }, take: n })).map((c) => ({ at: c.at, by: c.by, changes: c.changes as unknown as SettingChange[] })),
 }; };
+/** Tur 87 (G38): hazır profilin TEK işleminin Beyin parçası — ayar + E-1 defteri; kendisi işlem AÇMAZ (çağıran `src/lib/risk-presets` risk parçasıyla aynı `$transaction`'a koyar). Değişiklik yoksa parça yok. */
+export const brainSettingsTx = (db: PrismaClient, next: BrainSettingsRow, by: string, changes: SettingChange[]): Prisma.PrismaPromise<unknown>[] => changes.length === 0 ? [] : [
+  db.brainSettings.update({ where: { id: 1 }, data: { model: next.model, callIntervalMs: next.callIntervalMs, candidates: next.candidates, candleLimit: next.candleLimit, monthlyCapUsd: next.monthlyCapUsd, dailyCallCap: next.dailyCallCap, totalCapUsd: next.totalCapUsd, capEmptyBehavior: next.capEmptyBehavior, infraUsd: next.infraUsd, tickMs: next.tickMs } }),
+  db.brainSettingChange.create({ data: { by, changes: changes as unknown as Prisma.InputJsonValue } }),
+];
 /** Kapı/kanarya deposu (S-9): `fail` fırlatır, `journalFail` yalnız defteri düşürür — ikisinde de ayar DEĞİŞMEZ (işlem taklidi). */
 export function memorySettingsStore(row: BrainSettingsRow | null = null): SettingsStore & { row: BrainSettingsRow | null; log: { at: Date; by: string; changes: SettingChange[] }[]; fail: boolean; journalFail: boolean } {
   const s = { row, log: [] as { at: Date; by: string; changes: SettingChange[] }[], fail: false, journalFail: false };

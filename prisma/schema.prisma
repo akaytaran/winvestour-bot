@@ -317,6 +317,8 @@ model RiskSettings {
   futuresEnabled    Boolean  @default(false) @map("futures_enabled") // A-5: hesap iş sahibinde; bayrak kapalıyken futures yolu reddeder
   shortMode         String   @default("NONE") @map("short_mode") // NONE | CARRY_HEDGE | FREE (CHECK). Kip bir SAYI değil ADdır; açık liste kodda TİP, seçilen kip yalnız burada
   m2FuturesMultiple Decimal? @map("m2_futures_multiple") @db.Decimal(12, 4) // M-2'nin FUTURES terimi. BİRİM: ÇARPAN (SPOT'un EDGE_MULTIPLE'ı ile aynı birim; bp DEĞİL). NULL = seçilmedi
+  preset            String?  @map("preset") // Tur 87 (G38): seçili hazır profil — CAUTIOUS | BALANCED | RISKY (CHECK). NULL = seçilmedi; yeni kurulumda NULL doğar, varsayılan YOK
+  presetApplied     Json?    @map("preset_applied") // Tur 87 (G38): seçim anında yazılan değerlerin anlık görüntüsü — 'Özel' bununla karşılaştırılarak TÜRETİLİR; preset ile birlikte NULL/dolu (CHECK)
   updatedAt         DateTime @updatedAt @map("updated_at")
 
   @@map("risk_settings")

@@ -14,7 +14,7 @@ import type { BinanceCall, BinanceResult } from "@/lib/binance";
 import { readRunPermit, type Deps as ControlDeps, type Permit } from "@/lib/engine-control";
 import { stopEngine, type Deps as EventDeps, type EmitResult } from "@/lib/events";
 import { requestWithEvents, type ExchangeDeps, type GuardedResult } from "@/lib/events/exchange";
-import { releaseFee, reserveFee, settleOrRelease, type Deps as LedgerDeps, type FeeRefusal, type FillReport, type ReleaseOutcome, type ReserveOutcome, type SettleOrReleaseOutcome } from "@/lib/fee-ledger";
+import { prismaLedgerStore, releaseFee, reserveFee, settleFee, settleOrRelease, type FeePaid, type SettleOutcome, type Deps as LedgerDeps, type FeeRefusal, type FillReport, type ReleaseOutcome, type ReserveOutcome, type SettleOrReleaseOutcome } from "@/lib/fee-ledger";
 import { EXECUTION_LEASE_MS, acquire, deriveClientOrderId, holds, release, type Holder, type LockStore, type SignalKey } from "./index";
 
 export type OrderRow = { exchangeOrderId: string; symbol: string; market: "SPOT" | "FUTURES"; type: "MARKET" | "LIMIT" | "STOP_LOSS" | "TAKE_PROFIT" | "STOP_LOSS_LIMIT" | "TAKE_PROFIT_LIMIT" | "STOP_MARKET" | "TAKE_PROFIT_MARKET"; side: "BUY" | "SELL"; quantity: string; price: string | null; status: string; placedAt: Date; rawResponse: unknown; positionId?: number | null };
@@ -87,3 +87,14 @@ export async function executeSignal<T = unknown>(plan: ExecutionPlan<T>, deps: D
   const rel = await release(lease, lock);
   return { executed: true, clientOrderId, owner, result, exchangeEvent, recorded, released: rel.ok, fee: { reservation: fee, settlement, ledgerEvent } };
 }
+
+// TB-8 (Üretim S16-2 = A) — REZERVASYONUN İKİ EKSİK KAPANIŞI bu sarmalayıcının mutabakat görevine eklendi (mevcut releaseFee/settleFee; yeni sayı YOK). Bütçe KAPISI değildir:
+//   hiçbir çıkış/koruma bu yollardan reddedilmez; emir ve koruma modülleri defter simgesi taşımaz (gate:fee-budget, gate:protection), yalnız bu iki işlevi çağırır.
+/** (a) Borsada BAŞARIYLA iptal edilen emrin rezervasyonu serbest. Dolum taşıyan iptal (kısmi dolum) bırakılmaz — komisyonu dolumdan mutabakat görür. Fırlatmaz. */
+export async function reconcileCanceled(i: { ref: string | null; executedQty?: string | null }, ledger?: LedgerDeps): Promise<ReleaseOutcome | null> {
+  return !i.ref || Number(i.executedQty ?? "0") > 0 ? null : releaseFee({ ref: i.ref }, ledger); }
+/** (b) Kullanıcı akışından dolum gelmeyen (futures) tetiklenmiş korumanın rezervasyonu AÇIK mı — açıksa çağıran gerçek komisyonu okur; okunamazsa false (çift sayım yok, Ö-2: komisyon "0" sayılmaz). */
+export async function reservationOpen(ref: string, ledger?: LedgerDeps): Promise<boolean> {
+  try { return (await (ledger?.store ?? prismaLedgerStore()).findEntry(ref))?.state === "RESERVED"; } catch { return false; } }
+/** (b) Tetiklenmiş korumanın GERÇEK komisyonu (borsanın işlem kayıtlarından) ile mutabakat. */
+export const reconcileTriggered = (i: { ref: string; fees: FeePaid[] }, ledger?: LedgerDeps): Promise<SettleOutcome> => settleFee({ ref: i.ref, fees: i.fees }, ledger);

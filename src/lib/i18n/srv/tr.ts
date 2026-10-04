@@ -224,7 +224,7 @@ export const TR_SRV = {
       TICK_MISSED: { title: "Bir ya da daha çok tik atlandı", what: "Motorun düzenli turu beklenen aralıkta koşmadı; arada bir boşluk var.", money: "Atlanan turda çıkış ve giriş değerlendirilmedi. Borsadaki koruma emirleri bu boşlukta da yerindeydi ve tetiklenmeleri gerekiyorsa tetiklendiler.", next: "Tur kendiliğinden yeniden başlar. Boşluk büyüdükçe aşağıdaki gecikme satırı bunu rakamla gösterir." },
       CHAIN_BREAK: { title: "Motorun sürekliliği koptu", what: "Motorun turunu devralması gereken halka devralmadı; zincir koptu ve nöbetçi yeniden kurdu.", money: "Kopuk geçen sürede yeni pozisyon açılmadı ve çıkış değerlendirilmedi; borsadaki koruma emirleri yerindeydi.", next: "Nöbetçi her dakika yeniden dener; tur yeniden başladığında bu uyarı kendiliğinden kalkar." },
     }) satisfies Partial<Record<StopReasonCode, PanelTextSrc>>,
-    fallback: { title: "Sicile kayıt düştü", what: "Sicile şu kayıt düştü: {label}.", money: "Bu kaydın para etkisi bu yüzeyde ayrıca yazılmadı; yeni pozisyon açılmadığını ve borsadaki koruma emirlerinin yerinde olduğunu varsayma, aşağıdaki satırlara bak.", next: "Bu sebep için ekran metni henüz yazılmadı; sicil kaydı yukarıdaki etiketle duruyor." },
+    fallback: { title: "Kaydedilen motor olayı", what: "Motorun kaydettiği sebep: {label}.", money: "Bu kaydın para etkisi bu yüzeyde ayrıca yazılmadı; yeni pozisyon açılmadığını ve borsadaki koruma emirlerinin yerinde olduğunu varsayma, aşağıdaki satırlara bak.", next: "Kaydın tamamı teknik ayrıntıda durur." },
     pnl: {
       grossWhat: "brüt kâr/zarar", grossWhy: "dolum ya da fiyat kaydı okunamadı",
       noGross: "{what}: {unknown} Bu pozisyon için bugüne dek ödenen gerçek komisyon {fee} USDT; net rakam brüt bilinmeden yazılamaz.",

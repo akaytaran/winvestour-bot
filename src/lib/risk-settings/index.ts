@@ -219,3 +219,20 @@ export function memoryRiskSharesStore(row: RiskShares | null = null): SharesStor
     changes: async (n: number) => s.log.slice(0, n),
   });
 }
+
+// ---- HAZIR PROFİL (Tur 87 · G38 · D6/D6' · S16-5): seçili profil + uygulandığı andaki değerler. Tablo erişimi tek yol kuralı gereği BU modülde; profil SAYILARI burada DEĞİL (./presets). ----
+// Yeni kurulumda iki sütun da NULL (profil seçili değil; göç tohumlamaz). Yazım yalnız TEK işlemin parçası olarak (`riskPresetTx`) — çağıran `src/lib/risk-presets` onu Beyin parçasıyla AYNI `$transaction`'a koyar.
+export type PresetApplied = { singlePositionPct: string | null; totalExposurePct: string | null; leverageCap: number | null; futuresEnabled: boolean; shortMode: ShortMode; m2FuturesMultiple: string | null; tickMs: number | null };
+export type PresetTxInput = { name: string; by: string; from: string | null; settings: RiskSettingsRow; settingChanges: SettingChange[]; shares: RiskShares; shareChanges: ShareChange[]; createShareRow: boolean; applied: PresetApplied };
+/** Seçili profil okuması. Satır yoksa null (çağıran kapalı arızalanır; "seçili değil" ile karıştırılmaz). */
+export const readPresetColumns = async (client?: PrismaClient): Promise<{ preset: string | null; applied: PresetApplied | null } | null> => {
+  const r = await (client ?? getDb()).riskSettings.findUnique({ where: { id: 1 }, select: { preset: true, presetApplied: true } });
+  return r ? { preset: r.preset, applied: r.presetApplied === null ? null : (r.presetApplied as unknown as PresetApplied) } : null; };
+/** TEK İŞLEMİN risk parçaları (E-1): ayar + seçili profil → defter (ayar değişiklikleri + profil) → pay satırı → pay defteri (pay değiştiyse). Kendisi işlem AÇMAZ. */
+export const riskPresetTx = (db: PrismaClient, w: PresetTxInput): Prisma.PrismaPromise<unknown>[] => { const pay = { maxSinglePositionPct: w.shares.singlePositionPct, maxTotalExposurePct: w.shares.totalExposurePct };
+  return [
+    db.riskSettings.update({ where: { id: 1 }, data: { leverageCap: w.settings.leverageCap, futuresEnabled: w.settings.futuresEnabled, shortMode: w.settings.shortMode, m2FuturesMultiple: w.settings.m2FuturesMultiple, preset: w.name, presetApplied: w.applied as unknown as Prisma.InputJsonValue } }),
+    db.riskSettingChange.create({ data: { by: w.by, changes: [...w.settingChanges, { field: "preset", from: w.from, to: w.name }] as unknown as Prisma.InputJsonValue } }),
+    w.createShareRow ? db.riskProfile.create({ data: { id: 1, ...pay } }) : db.riskProfile.update({ where: { id: 1 }, data: pay }),
+    ...(w.shareChanges.length ? [db.riskSettingChange.create({ data: { by: w.by, changes: w.shareChanges as unknown as Prisma.InputJsonValue } })] : []),
+  ]; };

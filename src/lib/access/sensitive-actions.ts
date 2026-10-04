@@ -14,6 +14,7 @@ export const SENSITIVE_ACTIONS = [
   "RISK_SETTINGS_CHANGE", // risk ayarları: kaldıraç tavanı, futures şalteri, SHORT kipi, M-2 futures çarpanı (Tur 36, K-11/A-5/M-2). Para riskini açan bir ayardır → ikinci doğrulama şart
   "LOCK_SETTINGS_CHANGE", // biyometrik kilit ayarı: kilidi aç/kapa + yeniden sorma süresi (Tur 63, G20). S-8: kilit tam da OTURUMU ELE GEÇİREN saldırgana karşı vardır; yalnız oturumla kapatılabilseydi koruduğu tek tehdide karşı işe yaramazdı → ikinci doğrulama şart
   "ENTRY_SETTINGS_CHANGE", // giriş şalteri: motorun kendi kararıyla GİRİŞ EMRİ gönderip gönderemeyeceği (Tur 64, G28 kutu 4, K-2). Şalteri AÇMAK para hareketi başlatabilen tek ayardır → ikinci doğrulama şart. KAPATMAK da bu uçtan geçer ama hiçbir arıza onu geciktiremez ve durdurma bu ayara HİÇ bağlı değildir (K-7).
+  "RISK_PRESET_APPLY", // hazır risk profili seçimi (Tur 87, G38): risk payları + futures/kaldıraç tavanı/M-2 çarpanı + short + tik aralığı TEK işlemde yazılır. Para riskini açan ayarları değiştirir → ikinci doğrulama şart
   "FEE_ASSET_BUY", // komisyon varlığı (BNB) alımı — iş sahibi kararı (Tur 18 madde 3): quote'tan indirim varlığına geçiş. Para hareket ettirir → ikinci doğrulama şart
 ] as const;
 export type SensitiveAction = (typeof SENSITIVE_ACTIONS)[number];

@@ -19,7 +19,7 @@ import { RECV_WINDOW_MS, markOrderSent, prismaKeySource, type StoredKeyPair } fr
 import { withSignedCall } from "@/lib/exchange-key/sign";
 import { stopEngine, type EmitResult } from "@/lib/events";
 import { requestWithEvents } from "@/lib/events/exchange";
-import { executeSignal, type Deps as ExecDeps, type Dispatch, type ExecuteOutcome, type OrderRow } from "@/lib/execution-lock/execute";
+import { executeSignal, reconcileCanceled, type Deps as ExecDeps, type Dispatch, type ExecuteOutcome, type OrderRow } from "@/lib/execution-lock/execute";
 import { CLOSED_SHORT_MODE, FUTURES_REFUSALS, readRiskRuntime, type SettingsStore } from "@/lib/risk-settings";
 import { readOrderFills, readSymbolLeverage } from "./futures-signed";
 import { entrySwitch, type EntrySwitchStore } from "@/lib/entry-settings";
@@ -283,4 +283,9 @@ async function signedOrderOp(label: string, method: "GET" | "DELETE", cls: Extra
 /** Borsadaki emrin GÜNCEL durumu (K-1 denetimi). Sınıf PROTECTION: bütçeye takılmaz (M-1), boğazda en yüksek payı alır. */
 export const readOrder = (ref: OrderRef, deps: OrderDeps = {}): Promise<OrderOpOutcome> => signedOrderOp("emir sorgusu", "GET", "PROTECTION", ORDER_QUERY_WEIGHT, ref, deps);
 /** Borsadaki emri İPTAL et (K-2: pozisyon kapatılırken ters yönde açık emir bırakılmaz). Sınıf EXIT: bütçeye takılmaz (M-1). */
-export const cancelOrder = (ref: OrderRef, deps: OrderDeps = {}): Promise<OrderOpOutcome> => signedOrderOp("emir iptali", "DELETE", "EXIT", ORDER_CANCEL_WEIGHT, ref, deps);
+//   TB-8 (Üretim S16-2 = A): BAŞARILI iptalde emrin komisyon rezervasyonu sarmalayıcının mutabakat işleviyle serbest bırakılır (kimlik borsanın yanıtından: SPOT `origClientOrderId`,
+//   futures `clientOrderId`, algo `clientAlgoId`); dolum taşıyan iptal bırakılmaz.
+export const cancelOrder = async (ref: OrderRef, deps: OrderDeps = {}): Promise<OrderOpOutcome> => {
+  const r = await signedOrderOp("emir iptali", "DELETE", "EXIT", ORDER_CANCEL_WEIGHT, ref, deps);
+  if (r.ok) { const d = r.data as OrderResponse & { origClientOrderId?: string }; await reconcileCanceled({ ref: d.origClientOrderId ?? d.clientOrderId ?? ref.clientOrderId ?? null, executedQty: d.executedQty }, deps.ledger); }
+  return r; };

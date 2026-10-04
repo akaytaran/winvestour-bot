@@ -15,7 +15,7 @@ import { giveBackLevel } from "@/lib/protection/trailing";
 import { pickEnv } from "@/lib/env";
 import { notifyState, type NotifyStateView } from "@/lib/notify";
 import { redisPipeline } from "@/lib/upstash";
-import { fill } from "@/lib/i18n";
+import { dictFor, fill } from "@/lib/i18n";
 import { srvFor, RECORD_LANG } from "@/lib/i18n/srv";
 
 export type Level = "OK" | "INFO" | "WARN" | "ALARM";
@@ -48,12 +48,14 @@ export const PANEL_TEXT: Record<TextCode, PanelText> = panelText();
 /** Madde 3'ün sekiz hâli EKRAN METNİ OLMADAN kalamaz: eksikse `never`'a `true` atanamaz ve derleme düşer. */
 type MissingText = Exclude<"POSITIONS_UNKNOWN" | "MARKET_FEED_DOWN" | "BRAIN_SETTINGS_UNREADABLE" | "BRAIN_SPEND_CEILING" | "HEALTH_PAUSED" | "PROTECTION_LOST" | "PROTECTION_UNVERIFIABLE" | "STOP_BUTTON", TextCode>;
 export const EVERY_REQUIRED_STATE_HAS_TEXT: [MissingText] extends [never] ? true : never = true;
-/** Sicildeki koddan ekran metni. Kod sicilde yoksa metin UYDURULMAZ: sicilin kendi etiketi (sicil metni, çevrilmez) cümlenin içinde durur; o da yoksa null. */
+/** Sicildeki koddan ekran metni. Kod sicilde yoksa metin UYDURULMAZ (null). Tur 88 (G37 kutu 6, S14-5): üç cümlesi yazılmamış sicil kodu için cümle, sicilin İÇ KAYIT ETİKETİ (Türkçe, iç terimli)
+ *  DEĞİL, istemci sözlüğünün o koda ait sade adıdır (`reasons`, 7 dil; sicilin HER kodu için derleyici zorlar) — iç kayıt etiketi ekrana ÇIKMAZ (gate:i18n). */
 export function textOf(code: string | null, lang: string = RECORD_LANG): PanelText | null {
   if (code === null) return null;
   const t = (panelText(lang) as Partial<Record<string, PanelText>>)[code]; if (t) return t;
-  const m = (STOP_REASONS as Record<string, { label: string } | undefined>)[code], f = PL(lang).fallback;
-  return m ? { level: "WARN", title: f.title, what: fill(f.what, { label: m.label }), money: f.money, next: f.next } : null;
+  if (!(code in STOP_REASONS)) return null;
+  const f = PL(lang).fallback, ad = (dictFor(lang).reasons as Record<string, string>)[code];
+  return { level: "WARN", title: f.title, what: fill(f.what, { label: ad }), money: f.money, next: f.next };
 }
 /** Sicil satırının yazdığı kod (`KOD · etiket · ayrıntı`). Ayrıntı EKRANA ÇIKMAZ (U-3: ham metin/kod göstermeyiz), yalnız kod sicilden okunur. */
 export const codeOf = (reason: string): string | null => { const c = reason.split(" · ")[0]?.trim() ?? ""; return /^[A-Z][A-Z0-9_]{2,}$/.test(c) ? c : null; };
@@ -61,7 +63,7 @@ export const codeOf = (reason: string): string | null => { const c = reason.spli
 // ---- OKUYUCULAR (hepsi SALT OKUMA; enjeksiyon yalnız kapı/kanarya için, S-9) ----
 export type StopRow = { id: number; reason: string; at: Date };
 export type PositionRow = { id: number; symbol: string; status: string; entry: string; qty: string; peak: string | null; pid: string | null; openedAt: Date; closedAt: Date | null; realized: string; fees: string; lastReason: string | null };
-export type PanelDeps = { ceilings?: () => Promise<{ totalPct: string | null; singlePct: string | null }>; capital?: () => Promise<{ capital: string | null; quoteAsset: string; periodStart: string } | null>; permit?: () => Promise<ControlDoc | null>; tick?: () => Promise<TickRecord | null>; rows?: () => Promise<PositionRow[]>; stop?: () => Promise<StopRow | null>; health?: () => Promise<HealthVerdict>; healthDeps?: HealthDeps; now?: () => number };
+export type PanelDeps = { ceilings?: () => Promise<{ totalPct: string | null; singlePct: string | null }>; funding?: () => Promise<{ paidUsdt: string; receivedUsdt: string; records: number; period: string } | null>; capital?: () => Promise<{ capital: string | null; quoteAsset: string; periodStart: string } | null>; permit?: () => Promise<ControlDoc | null>; tick?: () => Promise<TickRecord | null>; rows?: () => Promise<PositionRow[]>; stop?: () => Promise<StopRow | null>; health?: () => Promise<HealthVerdict>; healthDeps?: HealthDeps; now?: () => number };
 /** İzin kopyası: TEK `GET`. Tazeleme YOK (tazeleme Neon'u uyandırır ve tikin işidir), yazma YOK ⇒ kopyanın ömrü bu açılıştan etkilenmez. */
 export const upstashPermitRead = () => upstashFlagStore().read();
 /** G32 (Tur 76): iki risk payı (K-9) — YALNIZ OKUMA, tek satır id=1. Satır yoksa ikisi de null (boş ≠ okunamadı; okunamazsa tryRead "okunamadı" der). Yazan uç YOKTUR (ölçüldü). */
@@ -70,6 +72,10 @@ export const prismaRiskCaps = (client?: PrismaClient) => async () => { const r =
 /** G32 (Tur 76): komisyon defterinin SON dönem satırındaki hesap değeri (dönem açılışında ölçülmüş; bugünkü serbest bakiye DEĞİLDİR, ekranda böyle yazılır). YALNIZ OKUMA. */
 export const prismaLastCapital = (client?: PrismaClient) => async () => { const r = await (client ?? getDb()).feeLedger.findFirst({ orderBy: { id: "desc" }, select: { capital: true, quoteAsset: true, periodStart: true } });
   return r ? { capital: r.capital === null ? null : String(r.capital), quoteAsset: r.quoteAsset, periodStart: r.periodStart.toISOString() } : null; };
+/** Tur 88 (G37 kutu 7 · S15-4, çapa G22 e): komisyon defterinin SON dönem satırındaki ödenen/alınan funding (USDT) ve o dönemin funding kayıt sayısı (fee_entries kind FUNDING).
+ *  Kayıt 0 ⇒ ekran "funding kaydı yok" der (çıplak 0 yazılmaz). YALNIZ OKUMA, tek sorgu. */
+export const prismaLastFunding = (client?: PrismaClient) => async () => { const r = await (client ?? getDb()).feeLedger.findFirst({ orderBy: { id: "desc" }, select: { fundingPaid: true, fundingReceived: true, periodStart: true, _count: { select: { entries: { where: { kind: "FUNDING" } } } } } });
+  return r ? { paidUsdt: String(r.fundingPaid), receivedUsdt: String(r.fundingReceived), records: r._count.entries, period: r.periodStart.toISOString() } : null; };
 /** Son tik kaydı: TEK `LINDEX` (liste başı). Tik listesine yazılmaz. */
 export const upstashLastTick = async (): Promise<TickRecord | null> => { const e = pickEnv("UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"); // DAR sözleşme (K-7 dersi): ilgisiz bir değişkenin eksikliği paneli kör etmesin
   const v = (await redisPipeline([["LINDEX", chainKeys(CHAIN_NS).ticks, 0]], { url: e.UPSTASH_REDIS_REST_URL, token: e.UPSTASH_REDIS_REST_TOKEN }))[0]; return typeof v === "string" && v ? (JSON.parse(v) as TickRecord) : null; };
@@ -143,18 +149,20 @@ export type RiskCaps = { ok: true; singlePct: string | null; totalPct: string | 
 export type CapitalView = { ok: true; capital: string | null; quoteAsset: string | null; periodStart: string | null } | { ok: false; why: string };
 /** Tur 77 (G32 parça 2): Durum sekmesinin "bir bakışta" satırları için YAPILANDIRILMIŞ özet — aynı okumalardan (yeni sorgu YOK). Okunamayan alan null ya da `read: false` (0 değil, Ö-2). */
 export type PanelSummary = { tick: { read: false } | { read: true; at: string | null; late: boolean | null }; openPositions: number | null; lastStop: { read: false } | { read: true; code: string | null; at: string | null };
-  health: { state: string; feesUsdt: string; period: string } | null };
+  health: { state: string; feesUsdt: string; period: string } | null;
+  /** Tur 88 (G37 kutu 7): okunamadıysa `read: false`; defter satırı yoksa kayıt 0. */
+  funding: { read: false } | { read: true; records: number; paidUsdt: string; receivedUsdt: string; period: string | null } };
 export type PanelView = { notifications: NotifyStateView; engineState: EngineState; riskCaps: RiskCaps; capital: CapitalView; at: string; engine: Card; tick: Card; health: Card; positions: { card: Card; rows: PositionView[] }; alerts: Card[]; sources: string[]; summary: PanelSummary };
 const card = (level: Level, title: string, lines: string[]): Card => ({ level, title, lines });
 /** PANELİN TAMAMI. Fırlatmaz: her okuma ayrı ayrı denenir, düşen okuma "bilinmiyor" olur (Ö-2) ve diğerleri yine gösterilir. `lang`: cümlelerin dili (uç isteğin dilini geçer; yoksa iç kayıt dili). */
 export async function readPanel(deps: PanelDeps = {}, lang: string = RECORD_LANG): Promise<PanelView> {
   const now = (deps.now ?? Date.now)(), alerts: Card[] = [], sources: string[] = [], P = PL(lang), R = P.reads, PT = panelText(lang), PM = permitText(lang);
   const tryRead = async <T>(what: string, fn: () => Promise<T>): Promise<{ ok: true; v: T } | { ok: false; why: string }> => { try { return { ok: true, v: await fn() }; } catch (e) { return { ok: false, why: fill(S(lang).common.readFailed, { what, name: (e as { name?: string })?.name ?? "error" }) }; } };
-  const [permit, tick, rows, stop, health, caps, capital] = await Promise.all([
+  const [permit, tick, rows, stop, health, caps, capital, funding] = await Promise.all([
     tryRead(R.permit, deps.permit ?? upstashPermitRead), tryRead(R.tick, deps.tick ?? upstashLastTick),
     tryRead(R.rows, deps.rows ?? prismaPositionRows()), tryRead(R.stop, deps.stop ?? prismaLastStop()),
     tryRead(R.health, deps.health ?? (() => readHealth(deps.healthDeps, lang))),
-    tryRead(R.caps, deps.ceilings ?? prismaRiskCaps()), tryRead(R.capital, deps.capital ?? prismaLastCapital()),
+    tryRead(R.caps, deps.ceilings ?? prismaRiskCaps()), tryRead(R.capital, deps.capital ?? prismaLastCapital()), tryRead(R.capital, deps.funding ?? prismaLastFunding()),
   ]);
   sources.push(...P.sources);
   // 1 — MOTOR: çalışıyor mu, çalışmıyorsa NEDEN (sebep sicilden, yüzeyden uydurulmaz)
@@ -218,7 +226,8 @@ export async function readPanel(deps: PanelDeps = {}, lang: string = RECORD_LANG
     tick: !tick.ok ? { read: false } : { read: true, at: tickRec === null ? null : new Date(tickRec.at).toISOString(), late: tickRec === null || running !== true ? null : now - tickRec.at > tickRec.tickMs + CRON_PERIOD_MS },
     openPositions: rows.ok ? views.filter((x) => x.open).length : null,
     lastStop: !stop.ok ? { read: false } : { read: true, code: stop.v === null ? null : codeOf(stop.v.reason), at: stop.v === null ? null : new Date(stop.v.at).toISOString() },
-    health: health.ok ? { state: health.v.state, feesUsdt: health.v.fees, period: health.v.period } : null };
+    health: health.ok ? { state: health.v.state, feesUsdt: health.v.fees, period: health.v.period } : null,
+    funding: !funding.ok ? { read: false } : funding.v === null ? { read: true, records: 0, paidUsdt: "0", receivedUsdt: "0", period: null } : { read: true, ...funding.v } };
   // Tur 82 (D2): bildirim eklentisinin durumu yalnız ad sözleşmesinden (Neon/Upstash okuması YOK ⇒ açılış maliyeti değişmez); değer taşımaz.
   return { notifications: notifyState(), engineState, riskCaps, capital: capitalView, at: new Date(now).toISOString(), engine, tick: tickCard, health: healthCard, positions: { card: posCard, rows: views }, alerts, sources, summary };
 }

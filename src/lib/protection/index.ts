@@ -22,6 +22,8 @@ import { requestStop, type Deps as ControlDeps } from "@/lib/engine-control";
 import { stopEngine, type Deps as EventDeps, type EmitResult } from "@/lib/events";
 import { FUTURES_PROTECTION_TYPE, ORDER_PATHS, cancelOrder, placeOrder, readOrder, type OrderDeps, type OrderIntent, type OrderOutcome, type OrderResponse } from "@/lib/orders";
 import { screenEntry, type ScreenDeps, type ScreenOutcome } from "@/lib/edge";
+import { readOrderFills } from "@/lib/orders/futures-signed";
+import { reconcileTriggered, reservationOpen } from "@/lib/execution-lock/execute";
 import { futuresEntryEdge, type FuturesScreenOutcome } from "@/lib/edge/futures";
 import { screenReentry, type ReentryDeps, type ReentryOutcome } from "./trailing";
 import { screenHealth, type HealthDeps, type HealthOutcome } from "@/lib/health";
@@ -245,6 +247,11 @@ export async function auditProtection(deps: Deps & { source?: string } = {}, giv
     if (q.ok && (RESTING_STATUSES as readonly string[]).includes(status as string)) { rows.push({ positionId: pos.id, symbol: pos.symbol, protectionOrderId: pos.protectionOrderId, state: "PROTECTED", status, action: "NONE", closure: null, detail: `koruma emri borsada duruyor (${status})` }); continue; }
     if (q.ok && status === "FILLED") { // stop TETİKLENDİ: pozisyon zaten çıktı — kapatma emri GÖNDERİLMEZ, satır gerçeğe göre kapatılır
       const marked = await store.close(pos.id, "CLOSED", new Date(now()), pos.peakPrice).catch(() => false);
+      // TB-8 (Üretim S16-2 = A): FUTURES korumasının tetik dolumu kullanıcı akışından GELMEZ (SPOT dolumu akıştan mutabakat görür) ⇒ rezervasyon AÇIKKEN gerçek emrin işlemleri
+      //   (userTrades) okunur ve sarmalayıcının mutabakat işleviyle gerçek komisyon yazılır; okunamazsa rezervasyon açık kalır (Ö-2). Bu dal emir GÖNDERMEZ.
+      const fd = q.data as OrderResponse & { actualOrderId?: string | number }, kim = fd.clientOrderId ?? null, gercek = fd.actualOrderId ?? null;
+      if (pos.market === "FUTURES" && kim && gercek !== null && gercek !== "" && await reservationOpen(kim, deps.ledger)) {
+        const t = await readOrderFills(pos.symbol, gercek, deps); if (t.ok) await reconcileTriggered({ ref: kim, fees: t.fills.map((f) => ({ asset: f.commissionAsset, amount: f.commission })) }, deps.ledger); }
       rows.push({ positionId: pos.id, symbol: pos.symbol, protectionOrderId: pos.protectionOrderId, state: "FILLED", status, action: "CLOSED", closure: null, detail: `koruma emri DOLDU (stop tetiklendi); satır ${marked ? "CLOSED" : "işaretlenemedi"}` }); continue;
     }
     if (!q.ok && !gone) { // sorgu düştü: koruma DOĞRULANAMADI → korumasız sayılır, motor durur (kapalı arıza)
